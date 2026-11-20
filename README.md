@@ -123,6 +123,12 @@ Configure the GitHub repository before enabling publishing:
 - Repository secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`: a Docker Hub user
   and a token with permission to push to that repository.
 
+Create `DOCKERHUB_IMAGE` under repository **Settings → Secrets and variables →
+Actions → Variables → New repository variable**. It is a repository variable,
+not a secret or an environment variable. If CI reports an empty `IMAGE_NAME`,
+this setting is missing or unavailable to the job; use the repository Variables
+tab and set its value to the Docker Hub repository, without a tag or digest.
+
 The workflow runs on pull requests, pushes to `main`, version tags, and manual
 dispatch. Only push events publish images. Each published image is tagged
 `sha-<full commit SHA>`; the workflow summary provides the deployment digest.
