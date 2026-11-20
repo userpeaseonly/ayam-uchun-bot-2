@@ -1,0 +1,25 @@
+# Allow only application, dependency, and test inputs into the build context.
+**
+!Dockerfile
+!requirements.txt
+!requirements-dev.txt
+!requirements.lock
+!pytest.ini
+!config.py
+!main.py
+!states.py
+!handlers/
+!handlers/*.py
+!keyboards/
+!keyboards/*.py
+!services/
+!services/*.py
+!utils/
+!utils/*.py
+!scripts/
+!scripts/*.py
+!scripts/deploy.sh
+!scripts/database/
+!scripts/database/*.py
+!tests/
+!tests/*.py

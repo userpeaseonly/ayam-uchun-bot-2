@@ -1,0 +1,97 @@
+name: Test and publish container
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.10', '3.11', '3.12', '3.13', '3.14']
+    env:
+      BOT_TOKEN: ''
+      ADMIN_IDS: ''
+      DEEPSEEK_API_KEY: test-key
+      GEMINI_API_KEY: ''
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+            requirements.lock
+      - run: python -m pip install -r requirements-dev.txt
+      - run: python -m pytest tests/ -v
+      - run: bash -n scripts/deploy.sh
+
+  container:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      IMAGE_NAME: ${{ vars.DOCKERHUB_IMAGE }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v4
+      - name: Build test image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: test
+          load: true
+          tags: ayam-bot-test:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Run tests in the container
+        run: docker run --rm -e DEEPSEEK_API_KEY=test-key ayam-bot-test:ci
+      - name: Validate Compose definitions
+        env:
+          BOT_IMAGE: example/ayam-bot@sha256:0000000000000000000000000000000000000000000000000000000000000000
+        run: |
+          cp .env.example .env.runtime
+          cp .env.example .env
+          docker compose -f compose.yaml config --quiet
+          docker compose -f compose.dev.yaml config --quiet
+      - name: Check publishing configuration
+        if: github.event_name == 'push'
+        run: test -n "$IMAGE_NAME"
+      - name: Log in to Docker Hub
+        if: github.event_name == 'push'
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Build and optionally publish production image
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: production
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name == 'push' }}
+          tags: ${{ env.IMAGE_NAME || 'ayam-bot-check' }}:sha-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Record published digest
+        if: github.event_name == 'push'
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: printf 'Deploy image `%s@%s`\n' "$IMAGE_NAME" "$IMAGE_DIGEST" >> "$GITHUB_STEP_SUMMARY"

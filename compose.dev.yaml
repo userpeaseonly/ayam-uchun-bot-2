@@ -1,0 +1,21 @@
+# Standalone local definition: use a separate Telegram bot token from production.
+name: ayam-uchun-bot-2-dev
+
+services:
+  bot:
+    build:
+      context: .
+      target: production
+    init: true
+    env_file:
+      - .env
+    environment:
+      DB_PATH: /data/bot_database.sqlite3
+      LOG_FILE: ""
+    volumes:
+      - dev-data:/data
+      - dev-reports:/app/reports
+
+volumes:
+  dev-data:
+  dev-reports:

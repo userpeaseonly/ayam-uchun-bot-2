@@ -1,0 +1,38 @@
+name: ayam-uchun-bot-2
+
+services:
+  bot:
+    image: ${BOT_IMAGE:?Set BOT_IMAGE to the release image digest}
+    init: true
+    restart: unless-stopped
+    env_file:
+      - .env.runtime
+    environment:
+      DB_PATH: /data/bot_database.sqlite3
+      LOG_FILE: ""
+    volumes:
+      - type: bind
+        source: ./data
+        target: /data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./reports
+        target: /app/reports
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./backups
+        target: /backups
+        bind:
+          create_host_path: false
+    stop_grace_period: 60s
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"

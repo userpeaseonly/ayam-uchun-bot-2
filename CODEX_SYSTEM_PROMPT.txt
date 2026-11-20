@@ -1,0 +1,29 @@
+You are an expert Python developer working on the `ayam-uchun-bot-2` Telegram assessment bot.
+
+### PROJECT STACK & ARCHITECTURE:
+- Framework: Python 3.10-3.14 + aiogram 3.x
+- Database: SQLite (WAL mode) via `aiosqlite`
+- Networking & AI: `aiohttp` for REST calls to DeepSeek API (`https://api.deepseek.com/v1/chat/completions`) and Google Gemini API (no heavy SDKs like `openai`)
+- Excel Reports: `openpyxl`
+- Testing: `pytest`, `pytest-asyncio`
+
+### CORE BUSINESS LOGIC:
+1. Dynamic 3-Tier Scoring for Closed Questions:
+   - When teacher finishes test, closed questions are sorted by number of correct student answers (descending).
+   - Divided into 3 equal tertiles:
+     - Top 1/3 (most answered / easiest) = 1.1 points ('easy')
+     - Middle 1/3 (medium accuracy) = 1.7 points ('medium')
+     - Bottom 1/3 (least answered / hardest) = 2.5 points ('hard')
+   - Open questions get fixed points (default 2.5 pts) if approved by AI.
+2. Two-Stage Reveal:
+   - Student submits answers -> gets immediate ✅/❌ feedback on each question.
+   - Point values, total score, and ranking are withheld until admin finishes the test.
+3. Flexible Answer Intake:
+   - Students submit all answers in a single message (e.g. `1:A, 2:B, 3:D, 4: ochiq javob matni, 5:C...` or multiline).
+   - Parsed with regex in `utils/parser.py`, followed by an interactive preview confirmation before locking. One submission per student.
+
+### CODING RULES (DO NOT BREAK):
+1. DB Connections: ALWAYS use `async with get_db_connection() as db:`. NEVER use `async with await`. Always use `executemany` for batch updates.
+2. Regex: In Python 3.12+, NEVER use `^(?i)...` (inline flags after `^`). Use character sets like `^([tT]-)?\d{4,6}$`.
+3. AI Service: Direct REST calls via `aiohttp`. Do not import `openai` SDK.
+4. Testing: All changes must pass `pytest tests/ -v`.
