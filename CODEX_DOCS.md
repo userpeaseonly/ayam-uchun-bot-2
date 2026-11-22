@@ -240,7 +240,7 @@ When extending or modifying this project, Codex / ChatGPT **must strictly follow
      ```bash
      .venv/bin/pytest tests/ -v
      ```
-   - Current test coverage: 22 automated tests covering parsing, scoring, Excel, AI evaluation, SQLite backups, container configuration, and deployment failure handling.
+   - Original test coverage: 22 automated tests covering parsing, scoring, Excel, AI evaluation, SQLite backups, container configuration, and deployment failure handling.
 
 ---
 
@@ -289,3 +289,40 @@ server setup, deployment, backups, rollback, and the remaining production
 readiness work. Deployment scaffolding is implemented; reliable interruption
 recovery, durable grading/delivery, and versioned migrations remain prerequisites
 for production assessments.
+
+
+## 11. Mini App architecture
+
+The app now hosts an aiohttp API alongside aiogram polling, plus React/TypeScript
+assets built by Vite. See `services/web_app.py` for routes,
+`services/telegram_auth.py` for verified Telegram identity, and
+`services/platform_service.py` for transactional publication/submission/draft
+operations. `services/test_document.py` defines version 1 question content:
+passages, A–F options, matching, open subparts, source pages and diagram regions.
+Published test content is immutable. Teachers must approve each question and key.
+
+DeepSeek extraction (`services/import_service.py`) renders PDFs through Poppler,
+normalizes photos with Pillow, and uses `deepseek-flash` vision via aiohttp.
+Extraction runs in page batches with persisted JSON checkpoints. Model responses
+are schema validated; model-generated keys/rubrics are discarded. Context-page
+questions are assigned to their source batch to prevent duplicates. Crops are
+materialized locally at publication. Only owner teachers can access full sources.
+
+`services/job_worker.py` runs one import worker and bounded grading/delivery
+workers. `jobs`, `import_chunks`, and `answer_drafts` persist progress. Missing AI
+keys and transport/JSON failures raise `AIUnavailable`; never convert an outage
+into acceptance or a wrong answer. Teacher overrides take precedence over a late
+AI response. All answers are saved atomically before AI is called. Finalization
+checks pending/incomplete submissions and writes tiers, totals, ranks, status and
+notification jobs in one transaction. Run exactly one application instance.
+
+`scripts/database/migrations.py` applies versioned additive migrations on startup,
+after the deployment backup. Legacy answer-key tests remain bot-compatible.
+Production media is stored at `/data/media`, so back it up as well as SQLite.
+Optional Caddy HTTPS is enabled with the Compose `web` profile and `.env.web`.
+Full server and staging instructions are in README.
+
+Multipart policy: all required subparts must match the approved whole-question
+rubric to earn the parent’s fixed points. There is no partial credit. Separate
+answer-key PDF extraction is not implemented; bulk paste and manual key/rubric
+entry are supported. UI styling can be improved independently of these services.

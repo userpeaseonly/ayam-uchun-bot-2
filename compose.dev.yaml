@@ -12,6 +12,10 @@ services:
     environment:
       DB_PATH: /data/bot_database.sqlite3
       LOG_FILE: ""
+      WEB_HOST: 0.0.0.0
+      MEDIA_PATH: /data/media
+    ports:
+      - "127.0.0.1:8080:8080"
     volumes:
       - dev-data:/data
       - dev-reports:/app/reports

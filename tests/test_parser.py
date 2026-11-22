@@ -119,4 +119,8 @@ def test_student_parser_user_exact_sample():
     assert res[6] == "A"
     assert res[7] == "A"
     assert res[8] == "daraxtdan darak tushdi."
+def test_matching_keys_accept_option_f():
+    from utils.parser import parse_admin_test_input
+    _, questions = parse_admin_test_input("Matching\n1. A\n2. B\n3. C\n4. F\n5. D")
+    assert questions[3]["correct_answer"] == "F"
 

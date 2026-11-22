@@ -10,6 +10,10 @@ services:
     environment:
       DB_PATH: /data/bot_database.sqlite3
       LOG_FILE: ""
+      WEB_HOST: 0.0.0.0
+      MEDIA_PATH: /data/media
+    ports:
+      - "127.0.0.1:8080:8080"
     volumes:
       - type: bind
         source: ./data
@@ -36,3 +40,28 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  proxy:
+    image: caddy:2-alpine
+    profiles: [web]
+    restart: unless-stopped
+    env_file:
+      - path: .env.web
+        required: false
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  caddy-data:
+  caddy-config:

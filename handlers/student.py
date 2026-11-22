@@ -11,11 +11,10 @@ from scripts.database.models import (
     get_test_by_id,
     get_questions_for_test,
     get_submission,
-    create_submission,
-    add_answer,
 )
-from services.ai_service import ai_evaluator
-from keyboards.inline import get_submission_confirm_keyboard
+from keyboards.inline import get_submission_confirm_keyboard, get_mini_app_keyboard
+from html import escape
+from services.platform_service import submit_answers, submission_result, PlatformError
 from keyboards.reply import get_main_menu_keyboard
 
 logger = logging.getLogger(__name__)
@@ -123,6 +122,13 @@ async def process_test_code_input(message: Message, code: str, state: FSMContext
         await state.clear()
         return
 
+    if test.get("document_json"):
+        keyboard = get_mini_app_keyboard(test["code"])
+        if keyboard:
+            await state.clear()
+            await message.answer("📱 Savollar va javoblar uchun Mini App'ni oching:", reply_markup=keyboard)
+            return
+
     questions = await get_questions_for_test(test["id"])
     open_count = test["open_questions_count"]
 
@@ -222,79 +228,22 @@ async def cb_confirm_submission(callback: CallbackQuery, state: FSMContext, bot:
         parse_mode="HTML"
     )
 
-    questions = await get_questions_for_test(test_id)
-
-    # 1. Create submission
-    sub_id = await create_submission(
-        test_id=test_id,
-        user_id=user.id,
-        first_name=user.first_name,
-        last_name=user.last_name,
-        username=user.username,
-    )
-
-    # 2. Grade each answer
-    feedback_lines = []
-    correct_count = 0
-
-    for q in questions:
-        q_id = q["id"]
-        q_num = q["question_num"]
-        q_type = q["question_type"]
-        user_ans = answers_dict.get(q_num, "").strip()
-
-        is_corr = 0
-        ai_feedback = None
-
-        if not user_ans:
-            feedback_lines.append(f"<b>{q_num}.</b> ❌ <i>(javob berilmagan)</i>")
-        elif q_type == "closed":
-            correct_key = (q["correct_answer"] or "").strip().upper()
-            if user_ans.upper() == correct_key:
-                is_corr = 1
-                correct_count += 1
-                feedback_lines.append(f"<b>{q_num}.</b> ✅ To'g'ri")
-            else:
-                feedback_lines.append(f"<b>{q_num}.</b> ❌ Noto'g'ri")
-        elif q_type == "open":
-            rubric = q["ai_instructions"] or ""
-            is_valid, explanation = await ai_evaluator.evaluate_open_answer(
-                question_num=q_num,
-                rubric=rubric,
-                student_answer=user_ans
-            )
-            ai_feedback = explanation
-            if is_valid:
-                is_corr = 1
-                correct_count += 1
-                feedback_lines.append(f"<b>{q_num}.</b> ✅ To'g'ri <i>(AI ma'qulladi)</i>")
-            else:
-                clean_exp = explanation.replace("<", "&lt;").replace(">", "&gt;")
-                feedback_lines.append(f"<b>{q_num}.</b> ❌ Noto'g'ri <i>({clean_exp})</i>")
-
-        # Save to database
-        await add_answer(
-            submission_id=sub_id,
-            question_id=q_id,
-            user_answer=user_ans,
-            is_correct=is_corr,
-            ai_feedback=ai_feedback,
-            points_awarded=0.0  # Dynamic points calculated upon admin finish
-        )
-
+    if data.get("test_id") != test_id:
+        await callback.answer("Sessiya boshqa testga tegishli. Qayta oching.", show_alert=True)
+        return
+    try:
+        await submit_answers(test_id, user.model_dump(), {str(k): v for k, v in answers_dict.items()})
+    except PlatformError as error:
+        await callback.message.edit_text(escape(str(error)))
+        await callback.answer()
+        return
+    result = await submission_result(test_id, user.id)
+    feedback_lines = [f"{a['number']}. " + ("⏳ Tekshirilmoqda" if a["correct"] is None else "✅ To'g'ri" if a["correct"] else "❌ Noto'g'ri") for a in result["answers"]]
     await state.clear()
-
-    # Immediate feedback message to student
-    result_msg = (
-        f"✅ <b>Javoblaringiz muvaffaqiyatli qabul qilindi!</b>\n\n"
-        f"📌 <b>Test:</b> {test['code']} - {test['title']}\n"
-        f"📊 <b>Natija:</b> {correct_count} / {len(questions)} ta to'g'ri javob\n\n"
-        f"<b>Savollar kesimida:</b>\n"
-        + "\n".join(feedback_lines) + "\n\n"
-        f"ℹ️ <b>Eslatma:</b> To'plagan umumiy ballingiz va testdagi o'rningiz o'qituvchi testni yakunlaganidan so'ng ushbu bot orqali sizga yuboriladi."
+    await callback.message.edit_text(
+        "✅ <b>Javoblaringiz saqlandi!</b>\n\n" + "\n".join(feedback_lines)
+        + "\n\nBall va o'rin test yakunlangach e'lon qilinadi.", parse_mode="HTML",
     )
-
-    await callback.message.edit_text(result_msg, parse_mode="HTML")
     await callback.answer()
 
 

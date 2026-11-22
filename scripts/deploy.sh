@@ -35,8 +35,8 @@ if [[ -n "$previous_container" ]]; then
     previous_running=$(docker inspect --format '{{.State.Running}}' "$previous_container")
 fi
 
-# Current handlers do not yet drain reliably. Until recovery work lands, deploy
-# only when no assessment/grading is active; stop_grace_period alone is not enough.
+# Stop the single polling/worker instance before backing up and migrating.
+# Accepted work resumes from persisted jobs when the new container starts.
 "${compose[@]}" stop bot
 backup_name="predeploy-$(date -u +%Y%m%dT%H%M%SZ)-$$.sqlite3"
 backup_args=(-m scripts.backup_db --output "/backups/$backup_name")
@@ -52,7 +52,7 @@ if ! "${compose[@]}" run --rm --no-deps -T --entrypoint python bot \
     exit 1
 fi
 
-# Schema migrations must be integrated here before deploying schema changes.
+# The new application applies additive migrations on startup, after this backup.
 if [[ -n "$previous_image" ]]; then
     printf '%s\n' "$previous_image" > .previous-image
 fi

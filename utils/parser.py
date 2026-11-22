@@ -88,17 +88,17 @@ def parse_admin_test_input(text: str) -> Tuple[str, List[Dict[str, Any]]]:
             }
             open_count += 1
         else:
-            # Closed question: single letter (A, B, C, D, E)
+            # Matching banks can contain six options, A through F.
             clean_ans = body.upper().strip()
             # In case teacher wrote "Variant A" or "A)"
-            letter_match = re.search(r"\b([A-E])\b", clean_ans)
+            letter_match = re.search(r"\b([A-F])\b", clean_ans)
             if not letter_match:
                 # If body is longer text without OPEN tag, assume teacher forgot [OPEN] tag
                 if len(body) > 3:
                     raise ParseError(
                         f"{q_num}-savol javobi '{body}' tushunarsiz.\n"
                         f"Agar bu ochiq savol bo'lsa, 'OPEN | ko'rsatma...' ko'rinishida yozing.\n"
-                        f"Yopiq savol bo'lsa, faqat A, B, C, D yoki E harfini kiriting."
+                        f"Yopiq savol bo'lsa, A–F harfini kiriting."
                     )
                 raise ParseError(f"{q_num}-savol uchun to'g'ri variant (A, B, C, D) topilmadi!")
             

@@ -166,6 +166,9 @@ async def generate_test_report_excel(test_id: int) -> str:
             ans = s_answers.get(q["id"])
             if ans:
                 val = ans["user_answer"]
+                # Student-controlled content must remain literal text in Excel.
+                if isinstance(val, str) and val.lstrip().startswith(("=", "+", "-", "@")):
+                    val = "'" + val
                 is_corr = ans["is_correct"] == 1
                 cell = ws3.cell(row=row_idx, column=col_idx, value=val)
                 cell.border = thin_border

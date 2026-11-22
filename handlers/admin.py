@@ -17,13 +17,14 @@ from scripts.database.models import (
     get_test_by_id,
     get_questions_for_test,
     get_submissions_for_test,
-    finish_test,
 )
 from services.scoring_service import run_test_analytics_and_scoring
+from services.platform_service import PlatformError
 from services.excel_service import generate_test_report_excel
 from keyboards.inline import (
     get_admin_test_control_keyboard,
     get_tests_list_keyboard,
+    get_mini_app_keyboard,
 )
 from keyboards.reply import get_main_menu_keyboard
 
@@ -53,6 +54,12 @@ async def cmd_new_test_prompt(message: Message, state: FSMContext):
     if text_content.startswith("/newtest") and len(text_content.splitlines()) > 4:
         # User supplied the test right in the command
         await process_admin_test_text(message, text_content, state)
+        return
+
+    keyboard = get_mini_app_keyboard()
+    if keyboard:
+        from handlers.import_upload import prompt_import
+        await prompt_import(message, state)
         return
 
     help_template = (
@@ -218,7 +225,7 @@ async def cb_view_test(callback: CallbackQuery):
 
     test_id = int(callback.data.split(":")[1])
     test = await get_test_by_id(test_id)
-    if not test:
+    if not test or test["created_by"] != callback.from_user.id:
         await callback.answer("Test topilmadi!", show_alert=True)
         return
 
@@ -254,6 +261,10 @@ async def cb_download_excel(callback: CallbackQuery):
         return
 
     test_id = int(callback.data.split(":")[1])
+    test = await get_test_by_id(test_id)
+    if not test or test["created_by"] != callback.from_user.id or test["status"] != "finished":
+        await callback.answer("Hisobot faqat o'zingizning yakunlangan testingiz uchun mumkin.", show_alert=True)
+        return
     await callback.answer("Excel fayl tayyorlanmoqda...")
     try:
         excel_path = await generate_test_report_excel(test_id)
@@ -277,7 +288,7 @@ async def cb_finish_test(callback: CallbackQuery, bot: Bot):
 
     test_id = int(callback.data.split(":")[1])
     test = await get_test_by_id(test_id)
-    if not test:
+    if not test or test["created_by"] != callback.from_user.id:
         await callback.answer("Test topilmadi!", show_alert=True)
         return
 
@@ -289,10 +300,11 @@ async def cb_finish_test(callback: CallbackQuery, bot: Bot):
     await callback.message.edit_text("⏳ <i>Natijalar hisoblanmoqda va taqsimlanmoqda...</i>", parse_mode="HTML")
 
     # 1. Run Analytics & tertile scoring
-    analytics = await run_test_analytics_and_scoring(test_id)
-
-    # 2. Mark test as finished
-    await finish_test(test_id)
+    try:
+        analytics = await run_test_analytics_and_scoring(test_id, finish=True, owner_id=callback.from_user.id)
+    except PlatformError as error:
+        await callback.message.edit_text(str(error), parse_mode=None)
+        return
 
     # 3. Generate Excel file
     excel_path = await generate_test_report_excel(test_id)
@@ -336,23 +348,4 @@ async def cb_finish_test(callback: CallbackQuery, bot: Bot):
         parse_mode="HTML"
     )
 
-    # 6. Broadcast final scores to all participating students
-    total_participants = len(submissions)
-    for sub in submissions:
-        student_id = sub["user_id"]
-        rank = sub.get("rank", "-")
-        score = sub.get("total_score", 0.0)
-        corr_cnt = sub.get("total_correct", 0)
-
-        student_msg = (
-            f"🔔 <b>Test yakunlandi! Sizning natijangiz:</b>\n\n"
-            f"📌 <b>Test:</b> {test['code']} - {test['title']}\n"
-            f"🏆 <b>O'rningiz:</b> {rank} / {total_participants}\n"
-            f"✅ <b>To'g'ri javoblar:</b> {corr_cnt} ta\n"
-            f"⭐️ <b>Umumiy to'plangan ball:</b> <b>{score}</b>\n\n"
-            f"<i>Batafsil ma'lumot uchun o'qituvchingizga murojaat qilishingiz mumkin.</i>"
-        )
-        try:
-            await bot.send_message(student_id, student_msg, parse_mode="HTML")
-        except Exception as e:
-            logger.warning(f"Could not send result to student {student_id}: {e}")
+    # Final student notifications are delivered by the durable job worker.

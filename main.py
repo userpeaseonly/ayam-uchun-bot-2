@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import sys
+from aiohttp import web
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.client.default import DefaultBotProperties
@@ -8,7 +9,7 @@ from aiogram.enums import ParseMode
 
 import config
 from scripts.database.db import init_db
-from handlers import common, admin, student
+from handlers import common, admin, student, import_upload
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,14 +39,34 @@ async def main():
 
     # Include routers
     dp.include_router(common.router)
+    dp.include_router(import_upload.router)
     dp.include_router(admin.router)
     dp.include_router(student.router)
 
     logger.info("Starting bot polling...")
+    from services.web_app import create_web_app
+    from services.job_worker import recover_jobs, worker_loop
+    app = create_web_app()
+    runner = web.AppRunner(app, access_log=None)
+    workers = []
     try:
-        await bot.delete_webhook(drop_pending_updates=True)
-        await dp.start_polling(bot)
+        from services.web_app import BOT_USERNAME_KEY
+        app[BOT_USERNAME_KEY] = (await bot.get_me()).username
+        await recover_jobs()
+        await runner.setup()
+        await web.TCPSite(runner, config.WEB_HOST, config.WEB_PORT).start()
+        workers = [asyncio.create_task(worker_loop(bot, imports=True)),
+                   *[asyncio.create_task(worker_loop(bot)) for _ in range(config.GRADING_CONCURRENCY)]]
+        if config.MINI_APP_URL:
+            from aiogram.types import MenuButtonWebApp, WebAppInfo
+            await bot.set_chat_menu_button(menu_button=MenuButtonWebApp(text="Testlar", web_app=WebAppInfo(url=config.MINI_APP_URL)))
+        await bot.delete_webhook(drop_pending_updates=False)
+        await dp.start_polling(bot, close_bot_session=False)
     finally:
+        for worker in workers:
+            worker.cancel()
+        await asyncio.gather(*workers, return_exceptions=True)
+        await runner.cleanup()
         await bot.session.close()
 
 

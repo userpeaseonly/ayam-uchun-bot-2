@@ -11,6 +11,23 @@ permissions:
   contents: read
 
 jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - run: npm run build
+
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -35,12 +52,13 @@ jobs:
             requirements.txt
             requirements-dev.txt
             requirements.lock
+      - run: sudo apt-get update && sudo apt-get install -y poppler-utils
       - run: python -m pip install -r requirements-dev.txt
       - run: python -m pytest tests/ -v
       - run: bash -n scripts/deploy.sh
 
   container:
-    needs: test
+    needs: [test, frontend]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -75,6 +93,7 @@ jobs:
         run: |
           cp .env.example .env.runtime
           cp .env.example .env
+          printf 'MINI_APP_DOMAIN=example.com\n' > .env.web
           docker compose -f compose.yaml config --quiet
           docker compose -f compose.dev.yaml config --quiet
       - name: Log in to Docker Hub

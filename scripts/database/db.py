@@ -87,4 +87,6 @@ async def init_db():
             """
         )
         await db.commit()
+        from scripts.database.migrations import migrate
+        await migrate(db)
         logger.info("Database initialized successfully.")

@@ -3,15 +3,21 @@ from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from keyboards.reply import get_main_menu_keyboard
+from keyboards.inline import get_mini_app_keyboard
+from html import escape
 
 router = Router()
 
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
+    if (message.text or "").split(maxsplit=1)[-1] == "import":
+        from handlers.import_upload import prompt_import
+        await prompt_import(message, state)
+        return
     await state.clear()
     text = (
-        f"Assalomu alaykum, <b>{message.from_user.first_name}</b>!\n\n"
+        f"Assalomu alaykum, <b>{escape(message.from_user.first_name)}</b>!\n\n"
         "Ushbu bot orqali test topshirishingiz va natijalarni bilib olishingiz mumkin.\n\n"
         "📌 Test topshirish uchun quyidagi <b>✍️ Test topshirish</b> tugmasini bosing yoki "
         "o'qituvchi bergan test kodini yuboring."
@@ -21,6 +27,9 @@ async def cmd_start(message: Message, state: FSMContext):
         reply_markup=get_main_menu_keyboard(message.from_user.id),
         parse_mode="HTML",
     )
+    keyboard = get_mini_app_keyboard()
+    if keyboard:
+        await message.answer("📱 Savollarni o'qish, javob berish va testlarni boshqarish:", reply_markup=keyboard)
 
 
 @router.message(F.text == "ℹ️ Bot haqida va qo'llanma")

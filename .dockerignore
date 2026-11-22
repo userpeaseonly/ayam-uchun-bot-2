@@ -23,3 +23,15 @@
 !scripts/database/*.py
 !tests/
 !tests/*.py
+!web/
+!web/package.json
+!web/package-lock.json
+!web/tsconfig.json
+!web/vite.config.ts
+!web/index.html
+!web/src/
+!web/src/*
+web/node_modules/
+web/dist/
+**/__pycache__/
+**/*.pyc

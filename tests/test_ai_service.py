@@ -1,6 +1,8 @@
 import pytest
 from unittest.mock import AsyncMock
 from services.ai_service import AIService
+from services.deepseek_client import AIUnavailable
+import config
 
 
 @pytest.mark.asyncio
@@ -31,3 +33,18 @@ async def test_ai_service_deepseek_mock():
 
     assert is_corr is True
     assert "to'liq" in exp
+
+
+@pytest.mark.asyncio
+async def test_no_key_is_pending_instead_of_automatic_acceptance(monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "")
+    monkeypatch.setattr(config, "GEMINI_API_KEY", "")
+    with pytest.raises(AIUnavailable):
+        await AIService().evaluate_open_answer(1, "Teacher criteria", "Student answer")
+
+
+def test_grading_rejects_string_boolean_and_missing_fields():
+    with pytest.raises(AIUnavailable):
+        AIService._validated_grade({"is_correct": "false", "explanation": "Bad response"})
+    with pytest.raises(AIUnavailable):
+        AIService._validated_grade({"is_correct": True})

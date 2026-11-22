@@ -66,7 +66,8 @@ ADMIN_IDS=123456789
 AI_PROVIDER=deepseek
 DEEPSEEK_API_KEY=your_deepseek_api_key_here
 DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
-DEEPSEEK_MODEL=deepseek-chat
+DEEPSEEK_MODEL=deepseek-flash
+DEEPSEEK_IMPORT_MODEL=deepseek-flash
 
 # Google Gemini (ixtiyoriy)
 GEMINI_API_KEY=your_gemini_api_key_here
@@ -93,8 +94,9 @@ image digest. Local development builds from source with `compose.dev.yaml`.
 There is one polling bot process per Telegram bot token. The application remains
 one deployable Python application, with handlers, application services, scoring,
 database access, and external API clients as internal boundaries. Accepted
-answers, grading progress, finalization, and delivery progress must become durable
-database state before production use; these recovery changes are still pending.
+answers, grading progress, finalization, and delivery progress are durable SQLite
+state. Submission acceptance and final scoring are atomic. A bounded worker pool
+resumes interrupted jobs on startup; run exactly one application instance.
 
 The initial workload target is fewer than 100 student submissions per minute
 across active tests. Start with SQLite WAL on persistent local storage and one
@@ -114,7 +116,7 @@ the `scripts/` directory, with its nested Python files included by `.dockerignor
 `requirements.txt` installs runtime dependencies; `requirements-dev.txt` adds
 pytest. `requirements.lock` constrains both to exact package versions. Production
 uses Python 3.14. The CI matrix checks Python 3.10–3.14; Python 3.10 uses the
-separate aiogram, Pydantic, and multidict versions in the constraints file to
+separate aiogram, Pydantic, Pillow, and multidict versions in the constraints file to
 respect their Python and dependency requirements.
 
 Configure the GitHub repository before enabling publishing:
@@ -152,17 +154,18 @@ docker compose -f compose.dev.yaml up --build
 
 Install Docker Engine, the Compose plugin, and `flock` from your Linux
 distribution. Keep Docker enabled at boot. Use SSH key access and limit inbound
-access to SSH; this polling deployment does not publish application ports.
+access to SSH and, for the Mini App HTTPS proxy, TCP ports 80/443. The Python
+API port is published only on 127.0.0.1, not the public interface.
 
 Create a deployment directory owned by the account that runs Docker. Copy these
-files from the same release into it: `compose.yaml`, `.env.example`, and
-`scripts/deploy.sh`. The Python application and backup helper come from the
+files from the same release into it: `compose.yaml`, `Caddyfile`, `.env.example`, `.env.web.example`,
+and the complete `scripts/` folder (preserve that folder layout). The Python application and backup helper come from the
 container image, so the server does not need the source checkout or Python.
 
 From that deployment directory:
 
 ```bash
-cp .env.example .env.runtime
+test -f .env.runtime || cp .env.example .env.runtime
 chmod 600 .env.runtime
 sudo install -d -o 10001 -g 10001 -m 0700 data reports backups
 ```
@@ -176,7 +179,7 @@ Storage is on the server filesystem, with these bind mounts:
 
 | Host directory | Container path | Purpose |
 | --- | --- | --- |
-| `data/` | `/data` | Live SQLite database and WAL files |
+| `data/` | `/data` | Live SQLite database, WAL files, and `media/` document/image assets |
 | `reports/` | `/app/reports` | Generated Excel reports |
 | `backups/` | `/backups` | Verified SQLite backup snapshots |
 
@@ -186,9 +189,9 @@ stay in `.env.runtime`. Never include either in the image.
 
 ### Deploy and inspect a release
 
-Until durable grading and shutdown recovery are implemented, schedule deployments
-when no assessments, grading, or result broadcasts are active. The configured
-60-second stop grace period does not itself make the current handlers drain.
+Accepted submissions, import checkpoints, and grading jobs survive application
+restarts. A deployment briefly interrupts HTTP requests; clients must retry.
+Prefer quiet periods for deployments, and never run overlapping bot/worker replicas.
 
 Copy the exact `namespace/repository@sha256:...` reference from the CI summary:
 
@@ -239,25 +242,135 @@ the existing database and any WAL/SHM files together, place the verified snapsho
 at `data/bot_database.sqlite3` with owner `10001:10001`, and start the compatible
 image. Do not combine the restored snapshot with old WAL/SHM files.
 
-The application currently initializes tables with `CREATE TABLE IF NOT EXISTS`;
-it does not have versioned schema migrations. Integrate an explicit migration
-step between backup and startup before releasing any schema change. Favor
-backward-compatible changes so that the previous image remains usable.
+Startup applies versioned, transactional, additive migrations from
+`scripts/database/migrations.py` after the deployment script has taken its backup.
+Existing answer-key-only tests are preserved. Check schema compatibility before
+rolling back; an older image does not implement the Mini App job recovery.
+Back up `data/media/` alongside database snapshots: a SQLite backup alone does
+not contain uploaded PDFs, page previews, or approved diagram crops.
 
-### Remaining production readiness work
+### Mini App and DeepSeek imports
 
-- Atomically accept a submission and its complete answer set; persist and resume
-  grading jobs without holding database transactions across AI requests.
-- Close test intake before finalization, resolve accepted pending submissions,
-  and commit scores/ranks and finished status consistently.
-- Treat AI/API failures as pending/error states, separate from wrong answers;
-  define retries, concurrency limits, provider fallback, and model availability.
-- Persist student drafts and notification progress; retry Telegram rate limits
-  and transient failures, and handle permanent delivery failures.
-- Replace startup update dropping with intentional update processing, implement
-  controlled shutdown/recovery, and enforce teacher ownership of test operations.
-- Add schema versioning, functional health monitoring, scheduled off-server
-  backups, and a verified restore procedure with chosen recovery targets.
+The application serves a React/TypeScript Mini App and an authenticated aiohttp
+API at port 8080. Node is used during the image build; production only runs
+Python and the optional Caddy reverse proxy. DeepSeek requests use aiohttp REST.
+
+Teacher flow: send/forward one PDF or ordered JPG/PNG/WebP photos to the bot's
+private chat, wait for extraction,
+review passages/questions/options/subparts and diagram crops, enter the official
+answer keys and open-answer rubrics, then approve each question and publish.
+PDFs/photos may total 20 MB and 30 pages. Imports are checkpointed in batches.
+Original pages remain private to their owner; students receive only approved
+crops referenced by the published test. Never crop answer keys or unrelated
+questions into student diagrams. Teacher approval freezes published content.
+
+**Uploading from Telegram:** send `/import`, or simply forward a PDF directly to
+the bot. PDFs are queued immediately. For photos (including albums), send all
+pages in order and then tap **Importni boshlash** or send `/done`. The collection
+is persistent; restarting the application does not lose received pages. Telegram
+message order determines page order even when downloads finish out of sequence.
+Repeated updates do not duplicate imports. Teachers receive a Mini App button
+that opens their exact draft, plus a notification when extraction finishes.
+Uploads are accepted only from configured admins in private chats, with a 20 MB
+combined limit and no more than 30 photo pages. Telegram's hosted Bot API also
+limits file downloads to 20 MB.
+
+The Mini App's teacher page has **Botga PDF yoki rasm yuborish** to return to
+the chat. Browser uploads remain available under **Telefondan fayl tanlash**, with
+separate PDF and image inputs. The browser picker depends on the Telegram client;
+forwarding files to the bot works without it. Set `MINI_APP_URL` to the reachable
+HTTPS origin so the bot can link back to the draft.
+
+Question limits remain 5–44 numbered questions and at most nine open parents.
+Matching questions can have A–F options. a)/b) fields stay inside one numbered
+open question. **All subparts must be correct to earn the parent question's
+points; partial credit is not implemented.** AI does not establish official keys.
+Paste bulk closed keys (`1:A, 2:F`) or enter them in the editor; enter open rubrics
+manually. Separate answer-key PDF extraction is not included in this release.
+
+Student flow: enter a code, read the questions/passages, answer, save drafts,
+review, and confirm once. Closed correctness is immediate. Open answers stay
+pending during provider failures and retry automatically up to three times;
+teachers can retry exhausted grading jobs or override grades before finalizing.
+Finalization is blocked while any answer is pending. Points and rank appear only
+after the teacher closes the test. Blank or incomplete multipart answers earn zero.
+
+Configure these values in the server's `.env.runtime`:
+
+```dotenv
+AI_PROVIDER=deepseek
+DEEPSEEK_MODEL=deepseek-flash
+DEEPSEEK_IMPORT_MODEL=deepseek-flash
+MINI_APP_URL=https://app.basirat.uz
+```
+
+Point that domain's DNS A/AAAA records at the server, copy `Caddyfile` from this
+release, and create `.env.web` beside `compose.yaml` (or copy `.env.web.example`):
+
+```dotenv
+MINI_APP_DOMAIN=app.basirat.uz
+```
+
+Deploy the image with the usual `bash scripts/deploy.sh 'namespace/image@sha256:…'`
+command. Then start the optional HTTPS proxy:
+
+```bash
+docker compose --env-file .env.release --profile web up -d proxy
+curl --fail --show-error --silent https://app.basirat.uz/ > /dev/null
+```
+
+Caddy obtains and renews HTTPS certificates. If you already have an HTTPS proxy,
+route the domain to `127.0.0.1:8080` instead. Telegram requires HTTPS in production.
+At startup the bot sets its menu button from `MINI_APP_URL`; `/start` also includes
+an Open Mini App button. Configure the same URL in BotFather's Mini App settings.
+Telegram identity signatures, expiry, role and test ownership are checked on the
+server. There is no development authentication bypass.
+
+For local development, install Poppler (`poppler-utils` on Debian/Ubuntu), then:
+
+```bash
+.venv/bin/python main.py
+# In a second terminal, for frontend hot reload:
+cd web
+npm ci
+npm run dev
+```
+
+Vite proxies `/api` to port 8080. For Telegram testing, use a development bot and
+an HTTPS tunnel to the frontend; set `MINI_APP_URL` to that HTTPS URL. Browser
+requests without a valid Telegram identity intentionally fail authentication.
+To serve the built frontend directly, run `npm run build` in `web/` first.
+
+Inspect a source document without contacting DeepSeek:
+
+```bash
+.venv/bin/python -m scripts.import_document /path/to/test.pdf --output-dir /tmp/ayam-import
+```
+
+Add `--run-ai` to use the configured DeepSeek key and write a draft JSON for
+quality review. This incurs API usage, uses an isolated scratch database, and
+never publishes a test. Extraction must be checked against the original; passing
+unit tests does not establish provider accuracy on arbitrary PDFs or photographs.
+
+### Verification and operational limits
+
+Run `.venv/bin/python -m pytest tests/ -v`, plus `npm test` and `npm run build`
+inside `web/`. CI checks both, Python 3.10–3.14, and the container test image.
+Backend coverage includes 100 concurrent submissions, duplicate confirmation,
+submission/finalization races, pending grading, teacher overrides during an AI
+request, migration of legacy tables, crop access, and Telegram authentication.
+
+The import worker handles one document at a time; eight workers process
+individual grading/delivery jobs (adjust `GRADING_CONCURRENCY`, bounded to 1–16). Jobs retry with backoff and stop after three
+failures; Telegram rate limits instead wait for the provider’s retry interval. Exhausted imports/grades expose a retry control. Telegram delivery is
+at-least-once: an interruption after sending but before saving delivery state can
+produce a duplicate message. Exhausted notification jobs need operator inspection;
+the Mini App remains the source of truth for results.
+
+Still validate on a separate staging bot before production assessments: the
+actual model/account, representative PDF/photo accuracy, Telegram Android/iOS
+behavior, off-server media/database backups, restore drills and ongoing monitoring.
+The concurrent submission test does not measure AI throughput or API quotas.
 
 References: [Compose in production](https://docs.docker.com/compose/how-tos/production/),
 [SQLite backup API](https://www.sqlite.org/backup.html),
