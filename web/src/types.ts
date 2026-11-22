@@ -30,6 +30,6 @@ export type Results = {
 
 declare global {
   interface Window {
-    Telegram?: { WebApp: { initData: string; ready(): void; expand(): void; close(): void; openTelegramLink(url: string): void; enableClosingConfirmation(): void; disableClosingConfirmation(): void; initDataUnsafe?: { start_param?: string } } };
+    Telegram?: { WebApp: { initData: string; ready(): void; expand(): void; close(): void; openTelegramLink(url: string): void; enableClosingConfirmation(): void; disableClosingConfirmation(): void; setHeaderColor?(color: string): void; setBackgroundColor?(color: string): void; BackButton?: { show(): void; hide(): void; onClick(callback: () => void): void; offClick(callback: () => void): void }; initDataUnsafe?: { start_param?: string } } };
   }
 }

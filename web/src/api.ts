@@ -3,11 +3,18 @@ export class ApiError extends Error {
 }
 
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch('/api' + path, {
-    credentials: 'same-origin', ...options,
-    headers: options.body instanceof FormData ? options.headers : { 'Content-Type': 'application/json', ...options.headers },
-  });
-  const data = await response.json();
+  let response: Response;
+  try {
+    response = await fetch('/api' + path, {
+      credentials: 'same-origin', ...options,
+      headers: options.body instanceof FormData ? options.headers : { 'Content-Type': 'application/json', ...options.headers },
+    });
+  } catch {
+    throw new ApiError('Serverga ulanib bo‘lmadi. Internet aloqasini tekshirib, qayta urinib ko‘ring.', 0);
+  }
+  let data;
+  try { data = await response.json(); }
+  catch { throw new ApiError('Serverdan javob olinmadi. Birozdan keyin qayta urinib ko‘ring.', response.status); }
   if (!response.ok) throw new ApiError(data.error || 'So‘rov bajarilmadi.', response.status);
   return data as T;
 }

@@ -14,7 +14,7 @@ def get_mini_app_keyboard(code="", *, import_id=""):
         query["import"] = import_id
     target = urlunsplit(url._replace(query=urlencode(query)))
     return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(
-        text="📱 Mini App'ni ochish", web_app=WebAppInfo(url=target),
+        text="📚 Basirat testlari", web_app=WebAppInfo(url=target),
     )]])
 
 
