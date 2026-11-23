@@ -1,11 +1,14 @@
-import React, { useEffect, useId, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { api, post, questionAnswered, linkedImport, ApiError } from './api';
+import { api, post, questionAnswered, linkedImport, linkedTest, ApiError } from './api';
 import type { Answers, ImportRecord, Passage, Question, Region, Results, StudentTest, Submission, TestDocument, TestSummary } from './types';
 import { Alert, Badge, Brand, ConfirmationProvider, EmptyState, Guide, Icon, Loading, NavigationProvider, useConfirmation, useExitGuard, useMediaQuery, useNavigation, useTelegramBack } from './ui';
 import { PublicationFields, PublisherProfile, StudentCatalog, visibilityLabel, sessionDate, ListingSettings } from './platform';
 import type { CatalogPage, Profile, Visibility, TeacherCounts } from './types';
+import { useAttemptTimer } from './useAttemptTimer';
+import { formatCountdown } from './timer';
 import './style.css';
+import './workspace.css';
 
 const assetUrl = (id: string) => '/api/assets/' + id;
 const message = (error: unknown) => error instanceof Error ? error.message : 'Amal bajarilmadi.';
@@ -25,20 +28,40 @@ function App() {
   return <ConfirmationProvider><NavigationProvider><Workspace /></NavigationProvider></ConfirmationProvider>;
 }
 
+type StudentPage = 'tests' | 'results' | 'profile';
+const studentPages = [
+  { id: 'tests', label: 'Testlar', icon: 'book' },
+  { id: 'results', label: 'Natijalarim', icon: 'chart' },
+  { id: 'profile', label: 'Profil', icon: 'users' },
+] as const;
+
 function Workspace() {
   const [identity, setIdentity] = useState<{ is_admin: boolean; can_teach: boolean; profile: Profile | null; user: { first_name: string; last_name?: string }; bot_import_url?: string | null } | null>(null);
   const [error, setError] = useState('');
   const [mode, setMode] = useState<'student' | 'teacher'>('student');
+  const [page, setPage] = useState<StudentPage>('tests');
+  const [focused, setFocused] = useState(false);
   const [guide, setGuide] = useState(false);
   const [loginAttempt, setLoginAttempt] = useState(0);
   const [switching, setSwitching] = useState(false);
   const [navigationError, setNavigationError] = useState('');
+  const accountMenu = useRef<HTMLDetailsElement>(null);
+  const entryImport = useRef(linkedImport(location.search));
+  const entryTest = useRef(linkedTest(location.search, window.Telegram?.WebApp.initDataUnsafe?.start_param));
+  const focusStudent = useCallback((value: boolean) => { setFocused(value); if (value) entryTest.current = null; }, []);
   const navigation = useNavigation();
-  useEffect(() => { window.scrollTo({ top: 0 }); }, [mode]);
-  async function switchMode(next: 'student' | 'teacher') {
-    if (next === mode || switching) return;
+  useEffect(() => { window.scrollTo({ top: 0 }); }, [mode, page]);
+  useEffect(() => {
+    const dismiss = (event: PointerEvent) => { if (accountMenu.current && !accountMenu.current.contains(event.target as Node)) accountMenu.current.open = false; };
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape' && accountMenu.current?.open) { accountMenu.current.open = false; accountMenu.current.querySelector('summary')?.focus(); } };
+    document.addEventListener('pointerdown', dismiss); document.addEventListener('keydown', escape);
+    return () => { document.removeEventListener('pointerdown', dismiss); document.removeEventListener('keydown', escape); };
+  }, []);
+  async function navigate(next: 'student' | 'teacher', destination: StudentPage = page) {
+    if (accountMenu.current) accountMenu.current.open = false;
+    if ((next === mode && destination === page && !focused) || switching) return;
     setSwitching(true); setNavigationError('');
-    try { await navigation.leave(); setMode(next); }
+    try { await navigation.leave(); if (mode === 'teacher') entryImport.current = null; setMode(next); setPage(destination); setFocused(false); }
     catch (error) { setNavigationError(message(error)); }
     finally { setSwitching(false); }
   }
@@ -58,25 +81,33 @@ function Workspace() {
     };
     void login();
   }, [loginAttempt]);
-  return <div className={'app-shell mode-' + mode}>
+  const fullName = identity ? [identity.user.first_name, identity.user.last_name].filter(Boolean).join(' ') : '';
+  const pageTitle = mode === 'teacher' ? 'O‘qituvchi kabineti' : studentPages.find(item => item.id === page)!.label;
+  const studentNav = (mobile = false) => <nav className={mobile ? 'student-bottom-nav' : 'workspace-nav'} aria-label={mobile ? 'O‘quvchi menyusi' : 'Asosiy bo‘limlar'}>{studentPages.map(item => <button key={item.id} disabled={switching} className={mode === 'student' && page === item.id ? 'nav-active' : ''} aria-current={mode === 'student' && page === item.id ? 'page' : undefined} onClick={() => void navigate('student', item.id)}><Icon name={item.icon} /><span>{item.label}</span></button>)}</nav>;
+  return <div className={'app-shell mode-' + mode + (focused ? ' focus-mode' : '') + (identity && mode === 'student' && !focused ? ' has-bottom-nav' : '')}>
     <a className="skip-link" href="#content">Asosiy mazmunga o‘tish</a>
-    <aside className="sidebar"><Brand /><div className="sidebar-label">SHAXSIY KABINET</div><nav className="workspace-nav" aria-label="Asosiy bo‘limlar">
-      <button disabled={switching} className={mode === 'student' ? 'nav-active' : ''} aria-current={mode === 'student' ? 'page' : undefined} onClick={() => void switchMode('student')}><Icon name="book" />Test topshirish<Icon name="chevron" size={16} /></button>
-      {identity?.can_teach && <button disabled={switching} className={mode === 'teacher' ? 'nav-active' : ''} aria-current={mode === 'teacher' ? 'page' : undefined} onClick={() => void switchMode('teacher')}><Icon name="grid" />O‘qituvchi<Icon name="chevron" size={16} /></button>}
-    </nav><div className="sidebar-bottom"><div className="sidebar-note"><Icon name="spark" /><p>Har bir savol —<br /><strong>yangi imkoniyat.</strong></p></div><button className="help-link" onClick={() => setGuide(true)}><Icon name="help" />Qanday foydalaniladi?</button><span className="sidebar-copyright">Basirat · Bilim sari birga</span></div></aside>
-    <div className="workspace"><header className="app-header"><div className="mobile-brand"><Brand /></div><span className="desktop-breadcrumb">Shaxsiy kabinet<Icon name="chevron" size={14} /><strong>{mode === 'teacher' ? 'O‘qituvchi' : 'Test topshirish'}</strong></span><div className="header-actions"><button className="icon-button" aria-label="Foydalanish qo‘llanmasi" onClick={() => setGuide(true)}><Icon name="help" /></button>{identity && <div className="profile"><span className="avatar">{identity.user.first_name.slice(0, 1).toUpperCase()}</span><div><strong>{identity.user.first_name}</strong><span>{mode === 'teacher' ? 'O‘qituvchi' : 'O‘quvchi'}</span></div></div>}</div></header>
+    <aside className="sidebar"><Brand /><div className="sidebar-label">BILIM SARI BIRGA</div>{studentNav()}
+      <div className="sidebar-bottom">{identity?.can_teach && <button className={'teacher-entry ' + (mode === 'teacher' ? 'nav-active' : '')} disabled={switching} onClick={() => void navigate('teacher')}><Icon name="grid" /><span>O‘qituvchi kabineti</span><Icon name="chevron" size={16} /></button>}<button className="help-link" onClick={() => setGuide(true)}><Icon name="help" />Qanday foydalaniladi?</button><span className="sidebar-copyright">Basirat · Barcha uchun ochiq</span></div></aside>
+    <div className="workspace"><header className="app-header"><div className="mobile-brand"><Brand /></div><span className="desktop-breadcrumb">Basirat<Icon name="chevron" size={14} /><strong>{pageTitle}</strong></span><div className="header-actions">{identity && <details className="account-menu" ref={accountMenu}><summary aria-label="Hisob menyusi"><span className="avatar">{identity.user.first_name.slice(0, 1).toUpperCase()}</span><span className="account-name">{identity.user.first_name}</span><Icon name="chevron" size={15} /></summary><div className="account-dropdown"><strong>{fullName}</strong><button disabled={switching} onClick={() => void navigate('student', 'profile')}><Icon name="users" size={18} />Profil</button>{identity.can_teach && <button disabled={switching} onClick={() => void navigate(mode === 'teacher' ? 'student' : 'teacher', 'tests')}><Icon name={mode === 'teacher' ? 'book' : 'grid'} size={18} />{mode === 'teacher' ? 'Testlarga qaytish' : 'O‘qituvchi kabineti'}</button>}<button onClick={() => { if (accountMenu.current) accountMenu.current.open = false; setGuide(true); }}><Icon name="help" size={18} />Yordam</button></div></details>}</div></header>
       <main id="content">
         {navigationError && <Alert>{navigationError}</Alert>}
-        {!identity ? <section className="card auth-card">{error ? <><span className="empty-icon"><Icon name="send" size={30} /></span><span className="eyebrow">BASIRAT TESTLAR</span><h1>Telegramda ko‘rishamiz.</h1><p>Test topshirish va kabinetingizga kirish uchun ilovani Telegram botidagi <strong>Testlar</strong> tugmasi orqali oching.</p><Alert>{error}</Alert><button onClick={() => setLoginAttempt(i => i + 1)}><Icon name="refresh" size={18} />Qayta ulanish</button><button className="quiet" onClick={() => setGuide(true)}>Qanday foydalaniladi?</button></> : <><Loading label="Kabinetingiz ochilmoqda…" /><p>Telegram hisobingiz tekshirilmoqda.</p></>}</section> : <>
-          {identity.can_teach && <nav className="role-switch" aria-label="Kabinetni tanlash"><button disabled={switching} aria-pressed={mode === 'student'} className={mode === 'student' ? 'selected' : ''} onClick={() => void switchMode('student')}><Icon name="book" size={18} />O‘quvchi</button><button disabled={switching} aria-pressed={mode === 'teacher'} className={mode === 'teacher' ? 'selected' : ''} onClick={() => void switchMode('teacher')}><Icon name="grid" size={18} />O‘qituvchi</button></nav>}
-          {mode === 'teacher' && identity.can_teach ? <><PublisherProfile profile={identity.profile} suggestedName={[identity.user.first_name, identity.user.last_name].filter(Boolean).join(' ')} saved={profile => setIdentity({ ...identity, profile })} /><Teacher botImportUrl={identity.bot_import_url} /></> : <StudentCatalog firstName={identity.user.first_name} renderAttempt={(test, back) => <Attempt key={test.id} initial={test} back={back} />} />}
-        </>}
+        {!identity ? <section className="card auth-card">{error ? <><span className="empty-icon"><Icon name="send" size={30} /></span><span className="eyebrow">BASIRAT TESTLAR</span><h1>Telegramda ko‘rishamiz.</h1><p>Test topshirish va kabinetingizga kirish uchun ilovani Telegram botidagi <strong>Testlar</strong> tugmasi orqali oching.</p><Alert>{error}</Alert><button onClick={() => setLoginAttempt(i => i + 1)}><Icon name="refresh" size={18} />Qayta ulanish</button><button className="quiet" onClick={() => setGuide(true)}>Qanday foydalaniladi?</button></> : <><Loading label="Kabinetingiz ochilmoqda…" /><p>Telegram hisobingiz tekshirilmoqda.</p></>}</section> : mode === 'teacher' && identity.can_teach ? <>
+          <button className="back-link teacher-return" disabled={switching} onClick={() => void navigate('student', 'tests')}><Icon name="back" size={17} />Testlarga qaytish</button>
+          {!identity.profile && <PublisherProfile profile={identity.profile} suggestedName={fullName} saved={profile => setIdentity({ ...identity, profile })} />}
+          <Teacher botImportUrl={identity.bot_import_url} initialImport={entryImport.current} />
+        </> : page === 'profile' ? <>
+          <div className="page-heading"><div><span className="eyebrow">SHAXSIY HISOB</span><h1>Profil</h1><p>Telegram hisobingiz orqali kirdingiz.</p></div></div>
+          <section className="card student-profile"><span className="avatar">{identity.user.first_name.slice(0, 1).toUpperCase()}</span><div><h2>{fullName}</h2><p>Javoblaringiz va natijalaringiz shu hisobda saqlanadi.</p></div></section>
+          {identity.can_teach && <section className="card teacher-invitation"><span className="list-icon"><Icon name="upload" /></span><div><h2>O‘z testingizni ulashing</h2><p>PDF yoki rasmlarni yuklang, savollarni tekshiring va o‘quvchilarga yuboring.</p></div><button onClick={() => void navigate('teacher')}><Icon name="grid" size={18} />O‘qituvchi kabineti</button></section>}
+          <PublisherProfile profile={identity.profile} suggestedName={fullName} saved={profile => setIdentity({ ...identity, profile })} />
+          <button className="secondary" onClick={() => setGuide(true)}><Icon name="help" size={18} />Foydalanish qo‘llanmasi</button>
+        </> : <StudentCatalog firstName={identity.user.first_name} section={page} initialHandle={entryTest.current} onFocus={focusStudent} renderAttempt={(test, back, done) => <Attempt key={test.id} initial={test} back={back} done={done} />} />}
       </main><footer className="workspace-footer"><span>Basirat · Barcha uchun ochiq</span><button className="quiet" onClick={() => setGuide(true)}>Yordam<Icon name="help" size={15} /></button></footer>
-    </div><Guide open={guide} close={() => setGuide(false)} />
+    </div>{identity && mode === 'student' && !focused && studentNav(true)}<Guide open={guide} close={() => setGuide(false)} />
   </div>;
 }
 
-function Teacher({ botImportUrl }: { botImportUrl?: string | null }) {
+function Teacher({ botImportUrl, initialImport }: { botImportUrl?: string | null; initialImport: string | null }) {
   const [imports, setImports] = useState<ImportRecord[]>([]);
   const [tests, setTests] = useState<TestSummary[]>([]);
   const [counts, setCounts] = useState<TeacherCounts | null>(null);
@@ -84,12 +115,12 @@ function Teacher({ botImportUrl }: { botImportUrl?: string | null }) {
   const [moreBusy, setMoreBusy] = useState(false);
   const loadedPages = useRef(1);
   const listGeneration = useRef(0);
-  const [selectedImport, setSelectedImport] = useState<string | null>(() => linkedImport(location.search));
+  const [selectedImport, setSelectedImport] = useState<string | null>(initialImport);
   const [selectedTest, setSelectedTest] = useState<number | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [list, setList] = useState<'tests' | 'imports'>('tests');
+  const [list, setList] = useState<'tests' | 'imports' | 'results'>('tests');
   const [search, setSearch] = useState('');
   const [loaded, setLoaded] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -109,7 +140,7 @@ function Teacher({ botImportUrl }: { botImportUrl?: string | null }) {
         if (!cursor) break;
       }
       if (generation !== listGeneration.current) return;
-      setImports(a); setTests(collected); setCounts(totals); setNextCursor(cursor); setLoaded(true); setError('');
+      setImports(a.filter(item => item.status !== 'published')); setTests(collected); setCounts(totals); setNextCursor(cursor); setLoaded(true); setError('');
     } catch (error) { if (generation === listGeneration.current) setError(message(error)); }
   }
   useEffect(() => { loadedPages.current = 1; setTests([]); setLoaded(false); void refresh(); const timer = setInterval(() => void refresh(), 5000); return () => { clearInterval(timer); ++listGeneration.current; }; }, [search]);
@@ -118,36 +149,34 @@ function Teacher({ botImportUrl }: { botImportUrl?: string | null }) {
     try {
       const data = new FormData(); files.forEach(file => data.append('files', file));
       const created = await api<{ id: string }>('/teacher/imports', { method: 'POST', body: data });
-      setFiles([]); setSelectedImport(created.id); await refresh();
+      setFiles([]); setUploadOpen(false); setSelectedImport(created.id); await refresh();
     } catch (error) { setError(message(error)); } finally { setBusy(false); }
   }
   if (selectedImport) return <ImportEditor id={selectedImport} back={() => { setSelectedImport(null); void refresh(); }} published={id => { setSelectedImport(null); setSelectedTest(id); void refresh(); }} />;
-  if (selectedTest) return <TeacherResults key={selectedTest} id={selectedTest} back={() => { setSelectedTest(null); void refresh(); }} newSession={id => { setSelectedTest(id); void refresh(); }} />;
+  if (selectedTest) return <TeacherResults key={selectedTest} id={selectedTest} manage={list !== 'results'} back={() => { setSelectedTest(null); void refresh(); }} newSession={id => { setList('tests'); setSelectedTest(id); void refresh(); }} />;
   const filteredTests = tests.filter(test => `${test.title} ${test.publisher_name} ${test.subject}`.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
   const filteredImports = imports.filter(item => item.title.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
-  function goToUpload() { setUploadOpen(true); requestAnimationFrame(() => window.document.getElementById('local-upload')?.scrollIntoView({ behavior: 'smooth', block: 'center' })); }
+  function goToUpload() { setUploadOpen(true); requestAnimationFrame(() => window.document.getElementById('upload-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })); }
   return <>
-    <div className="page-heading"><div><span className="eyebrow">O‘QITUVCHI KABINETI</span><h1>Bilimni baholash,<br className="mobile-only" /> yanada qulay.</h1><p>Test yarating, javoblarni tekshiring va natijalarni kuzating.</p></div><button className="secondary" onClick={goToUpload}><Icon name="plus" size={18} />Yangi test</button></div>
-    <div className="stats-grid"><div className="stat-card"><span className="stat-icon"><Icon name="book" /></span><div><span>Jami sessiyalar</span><strong>{loaded ? counts?.total ?? tests.length : '—'}</strong></div></div><div className="stat-card"><span className="stat-icon green"><Icon name="chart" /></span><div><span>Faol testlar</span><strong>{loaded ? counts?.active ?? tests.filter(t => t.status === 'active').length : '—'}</strong></div></div><div className="stat-card"><span className="stat-icon pink"><Icon name="edit" /></span><div><span>Tekshirishga tayyor</span><strong>{loaded ? counts?.review ?? imports.filter(i => i.status === 'review').length : '—'}</strong></div></div></div>
-    <section className="upload-panel" id="upload-panel"><div className="upload-copy"><span className="eyebrow"><Icon name="spark" size={15} />AI YORDAMIDA TEST YARATISH</span><h2>Tayyor testdan boshlang.</h2><p>PDF yoki rasmlarni yuboring. AI savollarni ajratadi,<br className="desktop-only" /> siz tekshirib, o‘quvchilarga taqdim etasiz.</p>
-      <button onClick={() => {
-        const telegram = window.Telegram?.WebApp;
-        if (botImportUrl) {
-          if (telegram?.openTelegramLink) telegram.openTelegramLink(botImportUrl);
-          else { location.assign(botImportUrl); return; }
-        }
-        telegram?.close();
-      }}><Icon name="send" size={18} />Telegram orqali yuborish<Icon name="arrow" size={18} /></button>
-      <span className="upload-hint">PDF yoki rasmlarni boshqa chatdan yuborishingiz ham mumkin.</span>
-    </div><div className="document-art" aria-hidden="true"><div className="art-page art-page-back" /><div className="art-page"><span className="art-file-label">BASIRAT · TEST</span><span className="art-line" /><span className="art-line short" /><span className="art-question"><i>A</i><b /></span><span className="art-question"><i>B</i><b /></span><span className="art-question art-checked"><i><Icon name="check" size={11} /></i><b /></span><span className="art-line short" /></div><span className="art-spark"><Icon name="spark" size={26} /></span></div></section>
-    <section className="card local-upload" id="local-upload"><details open={uploadOpen} onToggle={event => setUploadOpen(event.currentTarget.open)}><summary><span><Icon name="upload" size={18} />Qurilmadan fayl yuklash</span><Icon name="plus" size={18} /></summary><p>Fayl telefonda yoki kompyuterda saqlanganmi? Shu yerdan tanlang.</p><div className="file-picker-grid"><label className="file-picker"><Icon name="file" size={26} /><strong>PDF hujjat</strong><span>Bitta PDF tanlang</span><input aria-label="PDF hujjat" type="file" accept=".pdf,application/pdf" disabled={busy} onChange={e => { setFiles(Array.from(e.target.files || [])); e.target.value = ''; }} /></label><label className="file-picker"><Icon name="image" size={26} /><strong>Sahifa rasmlari</strong><span>JPG, PNG yoki WebP</span><input aria-label="Sahifa rasmlari" type="file" accept="image/*" multiple disabled={busy} onChange={e => { setFiles(Array.from(e.target.files || [])); e.target.value = ''; }} /></label></div>
+    <div className="page-heading teacher-heading"><div><span className="eyebrow">O‘QITUVCHI KABINETI</span><h1>Testlaringiz, bir joyda.</h1><p>Yuklang, tekshiring, ulashing va natijalarni kuzating.</p></div><button onClick={goToUpload}><Icon name="plus" size={18} />Test yuklash</button></div>
+    <div className="teacher-summary"><span><strong>{loaded ? counts?.total ?? tests.length : '—'}</strong> sessiya</span><span><i className="result-dot correct" /><strong>{loaded ? counts?.active ?? tests.filter(t => t.status === 'active').length : '—'}</strong> faol</span><button className="quiet" onClick={() => setList('imports')}><Icon name="edit" size={16} /><strong>{loaded ? counts?.review ?? imports.filter(i => i.status === 'review').length : '—'}</strong> tekshirishga tayyor<Icon name="chevron" size={14} /></button></div>
+    {uploadOpen && <section className="teacher-upload" id="upload-panel" aria-label="Test yuklash"><div className="section-heading"><div><span className="eyebrow">YANGI TEST</span><h2>PDF yoki rasmlardan boshlang</h2></div><button className="icon-button" aria-label="Yuklash oynasini yopish" disabled={busy} onClick={() => setUploadOpen(false)}><Icon name="close" /></button></div><p>AI savollarni ajratadi. Siz matn va javoblarni tekshirib, testni nashr qilasiz.</p><ol className="upload-steps"><li>1. Fayl yuklash</li><li>2. AI ajratishi</li><li>3. Tekshirish</li><li>4. Nashr qilish</li></ol><div className="telegram-upload"><div><h3>Fayl Telegramdami?</h3><p>Botga PDF yoki sahifa rasmlarini yuboring. Boshqa chatdan yo‘naltirish ham mumkin.</p></div><button className="secondary" onClick={() => {
+      const telegram = window.Telegram?.WebApp;
+      if (botImportUrl) {
+        if (telegram?.openTelegramLink) telegram.openTelegramLink(botImportUrl);
+        else { location.assign(botImportUrl); return; }
+      }
+      telegram?.close();
+    }}><Icon name="send" size={18} />Telegram orqali yuborish</button></div>
+    <section className="card local-upload" id="local-upload"><h3><Icon name="upload" size={18} />Qurilmadan fayl yuklash</h3><p>Fayl telefonda yoki kompyuterda saqlanganmi? Shu yerdan tanlang.</p><div className="file-picker-grid"><label className="file-picker"><Icon name="file" size={26} /><strong>PDF hujjat</strong><span>Bitta PDF tanlang</span><input aria-label="PDF hujjat" type="file" accept=".pdf,application/pdf" disabled={busy} onChange={e => { setFiles(Array.from(e.target.files || [])); e.target.value = ''; }} /></label><label className="file-picker"><Icon name="image" size={26} /><strong>Sahifa rasmlari</strong><span>JPG, PNG yoki WebP</span><input aria-label="Sahifa rasmlari" type="file" accept="image/*" multiple disabled={busy} onChange={e => { setFiles(Array.from(e.target.files || [])); e.target.value = ''; }} /></label></div>
       {!!files.length && <ol className="file-list">{files.map((file, i) => <li key={i}><span className="file-order">{i + 1}</span><span>{file.name}<small>{(file.size / 1024 / 1024).toFixed(1)} MB</small></span>{i > 0 && <button className="icon-button" aria-label={`${file.name} faylini oldinga ko‘chirish`} onClick={() => setFiles(list => { const next = [...list]; [next[i - 1], next[i]] = [next[i], next[i - 1]]; return next; })}>↑</button>}<button className="icon-button" aria-label={`${file.name} faylini olib tashlash`} onClick={() => setFiles(list => list.filter((_, n) => n !== i))}><Icon name="close" size={17} /></button></li>)}</ol>}
-      <div className="upload-bottom"><span className="muted">Jami 20 MB gacha · Ko‘pi bilan 30 sahifa</span><button disabled={!files.length || busy} onClick={() => void upload()}>{busy ? <><span className="spinner" />Yuklanmoqda…</> : <><Icon name="spark" size={17} />Savollarni ajratish</>}</button></div></details></section>
+      <div className="upload-bottom"><span className="muted">Jami 20 MB gacha · Ko‘pi bilan 30 sahifa</span><button disabled={!files.length || busy} onClick={() => void upload()}>{busy ? <><span className="spinner" />Yuklanmoqda…</> : <><Icon name="spark" size={17} />Savollarni ajratish</>}</button></div></section>
+    </section>}
     {error && <Alert>{error}</Alert>}
-    <section className="card library"><div className="library-header"><nav className="tabs" aria-label="Testlar ro‘yxati"><button className={list === 'tests' ? 'selected' : ''} aria-pressed={list === 'tests'} onClick={() => setList('tests')}>Testlar<span>{tests.length}</span></button><button className={list === 'imports' ? 'selected' : ''} aria-pressed={list === 'imports'} onClick={() => setList('imports')}>Qoralamalar<span>{imports.length}</span></button></nav><label className="search-field"><Icon name="search" size={17} /><input aria-label="Testlarni qidirish" placeholder="Test yoki fan bo‘yicha qidirish" value={search} onChange={e => setSearch(e.target.value)} /></label></div>
-      {!loaded ? <Loading /> : list === 'tests' ? !filteredTests.length ? <EmptyState title={search ? 'Test topilmadi' : 'Birinchi testingizni yarating'} action={!search && <button className="secondary" onClick={goToUpload}><Icon name="plus" size={17} />Test qo‘shish</button>}>{search ? 'Boshqa nom bilan qidirib ko‘ring.' : 'Tayyor PDF yoki rasmlarni yuklang. Nashr qilingan testlaringiz shu yerda bo‘ladi.'}</EmptyState> : <div className="test-list">{filteredTests.map(test => <button className="test-list-row" key={test.id} onClick={() => setSelectedTest(test.id)}><span className="list-icon"><Icon name="book" /></span><span className="list-title"><strong>{test.title}</strong><span>{test.publisher_name}<span className="dot-separator">·</span>{test.total_questions} ta savol · {visibilityLabel(test.visibility)} · {sessionDate(test.created_at)} · #{test.id}</span></span><Badge status={test.status} /><Icon name="chevron" size={18} /></button>)}</div> : !filteredImports.length ? <EmptyState icon="file" title={search ? 'Qoralama topilmadi' : 'Hali qoralamalar yo‘q'}>{search ? 'Boshqa nom bilan qidirib ko‘ring.' : 'Yuborgan fayllaringiz va AI ajratgan savollar shu yerda saqlanadi.'}</EmptyState> : <div className="test-list">{filteredImports.map(item => <button className="test-list-row" key={item.id} onClick={() => setSelectedImport(item.id)}><span className="list-icon"><Icon name="file" /></span><span className="list-title"><strong>{item.title}</strong><span>{['processing', 'queued'].includes(item.status) ? `${item.progress}% tayyor` : item.document ? `${item.document.questions.length} ta savol` : 'PDF va rasmlardan test'}</span></span><Badge status={item.status} /><Icon name="chevron" size={18} /></button>)}</div>}
+    <section className="card library teacher-library"><div className="library-header"><nav className="tabs" aria-label="Testlar ro‘yxati"><button className={list === 'tests' ? 'selected' : ''} aria-pressed={list === 'tests'} onClick={() => setList('tests')}>Testlar<span>{tests.length}</span></button><button className={list === 'imports' ? 'selected' : ''} aria-pressed={list === 'imports'} onClick={() => setList('imports')}>Qoralamalar<span>{imports.length}</span></button><button className={list === 'results' ? 'selected' : ''} aria-pressed={list === 'results'} onClick={() => setList('results')}>Natijalar</button></nav><label className="search-field"><Icon name="search" size={17} /><input aria-label="Testlarni qidirish" placeholder="Test yoki fan bo‘yicha qidirish" value={search} onChange={e => setSearch(e.target.value)} /></label></div>
+      {!loaded ? <Loading /> : list !== 'imports' ? !filteredTests.length ? <EmptyState title={search ? 'Test topilmadi' : 'Birinchi testingizni yarating'} action={!search && <button className="secondary" onClick={goToUpload}><Icon name="plus" size={17} />Test qo‘shish</button>}>{search ? 'Boshqa nom bilan qidirib ko‘ring.' : 'Tayyor PDF yoki rasmlarni yuklang. Nashr qilingan testlaringiz shu yerda bo‘ladi.'}</EmptyState> : <div className="test-list">{filteredTests.map(test => <button className="test-list-row" key={test.id} onClick={() => setSelectedTest(test.id)}><span className="list-icon"><Icon name={list === 'results' ? 'chart' : 'book'} /></span><span className="list-title"><strong>{test.title}</strong><span>{test.publisher_name}<span className="dot-separator">·</span>{test.total_questions} ta savol · {visibilityLabel(test.visibility)} · {sessionDate(test.created_at)}{list === 'results' ? ' · Natijalarni ko‘rish' : ''}</span></span><Badge status={test.status} /><Icon name="chevron" size={18} /></button>)}</div> : !filteredImports.length ? <EmptyState icon="file" title={search ? 'Qoralama topilmadi' : 'Hali qoralamalar yo‘q'}>{search ? 'Boshqa nom bilan qidirib ko‘ring.' : 'Yuborgan fayllaringiz va AI ajratgan savollar shu yerda saqlanadi.'}</EmptyState> : <div className="test-list">{filteredImports.map(item => <button className="test-list-row" key={item.id} onClick={() => setSelectedImport(item.id)}><span className="list-icon"><Icon name="file" /></span><span className="list-title"><strong>{item.title}</strong><span>{['processing', 'queued'].includes(item.status) ? `${item.progress}% tayyor` : item.document ? `${item.document.questions.length} ta savol` : 'PDF va rasmlardan test'}</span></span><Badge status={item.status} /><Icon name="chevron" size={18} /></button>)}</div>}
     </section>
-    {list === 'tests' && nextCursor && <div className="catalog-more"><button className="secondary" disabled={moreBusy} onClick={async () => { setMoreBusy(true); loadedPages.current++; await refresh(); setMoreBusy(false); }}>Yana ko‘rsatish</button></div>}
+    {list !== 'imports' && nextCursor && <div className="catalog-more"><button className="secondary" disabled={moreBusy} onClick={async () => { setMoreBusy(true); loadedPages.current++; await refresh(); setMoreBusy(false); }}>Yana ko‘rsatish</button></div>}
     <div className="teacher-tip"><Icon name="shield" size={19} /><p>Test faqat siz savollar va javoblarni tekshirib, nashr qilganingizdan keyin o‘quvchilarga ochiladi.</p></div>
   </>;
 }
@@ -160,7 +189,7 @@ function ImportEditor({ id, back, published }: { id: string; back(): void; publi
   const revision = useRef(0);
   const latestDocument = useRef<TestDocument | null>(null);
   const savedDocument = useRef('');
-  const metadata = useRef<{ visibility: Visibility; subject: string }>({ visibility: 'public', subject: '' });
+  const metadata = useRef<{ visibility: Visibility; subject: string; duration_minutes: number | null }>({ visibility: 'public', subject: '', duration_minutes: null });
   const saving = useRef<Promise<number> | null>(null);
   const conflict = useRef(false);
   const [dirty, setDirty] = useState(false);
@@ -174,7 +203,7 @@ function ImportEditor({ id, back, published }: { id: string; back(): void; publi
     try {
       const item = await api<ImportRecord>('/teacher/imports/' + id);
       setRecord(item);
-      if (item.document && !latestDocument.current) { setDocument(item.document); latestDocument.current = item.document; revision.current = item.revision; metadata.current = { visibility: item.visibility, subject: item.subject }; savedDocument.current = JSON.stringify({ document: item.document, ...metadata.current }); }
+      if (item.document && !latestDocument.current) { setDocument(item.document); latestDocument.current = item.document; revision.current = item.revision; metadata.current = { visibility: item.visibility, subject: item.subject, duration_minutes: item.duration_minutes }; savedDocument.current = JSON.stringify({ document: item.document, ...metadata.current }); }
     } catch (error) { setError(message(error)); }
   }
   useEffect(() => { void load(); }, [id]);
@@ -193,7 +222,7 @@ function ImportEditor({ id, back, published }: { id: string; back(): void; publi
     if (!dirty || busy) return;
     const timer = setTimeout(() => void save().catch(error => setError(message(error))), 1500);
     return () => clearTimeout(timer);
-  }, [document, dirty, busy, record?.visibility, record?.subject]);
+  }, [document, dirty, busy, record?.visibility, record?.subject, record?.duration_minutes]);
   function change(next: TestDocument) { latestDocument.current = next; setDocument(next); setDirty(true); setNotice(''); }
   async function save() {
     while (saving.current) await saving.current;
@@ -244,7 +273,7 @@ function ImportEditor({ id, back, published }: { id: string; back(): void; publi
     {notice && !dirty && <div className="save-notice" role="status"><Icon name="check" size={14} />{notice}</div>}
     {!record ? <Loading /> : record.status === 'published' ? <section className="card"><EmptyState icon="check" title="Testingiz tayyor!" action={<button onClick={() => published(record.published_test_id!)}>Test va natijalar<Icon name="arrow" size={17} /></button>}>Endi test havolasini o‘quvchilarga yuborishingiz mumkin.</EmptyState></section> : !document ? <section className="card processing-card"><span className="processing-icon"><Icon name={record.status === 'failed' ? 'refresh' : record.status === 'collecting' ? 'image' : 'spark'} size={32} /></span><Badge status={record.status} /><h2>{record.status === 'collecting' ? 'Sahifalarni yig‘amiz.' : record.status === 'failed' ? 'Yana bir bor urinib ko‘ramiz.' : 'Testingiz tayyorlanmoqda.'}</h2><p className="muted">{record.title}</p><div className="progress-label"><span>Tayyorlanish jarayoni</span><strong>{record.progress}%</strong></div><progress aria-label="Testni ajratish jarayoni" value={record.progress} max={100} />{record.status === 'collecting' ? <><p>{record.assets.filter(a => a.kind === 'source').length} ta rasm qabul qilindi. Qolgan sahifalarni botga yuboring, so‘ng ajratishni boshlang.</p><button disabled={busy} onClick={async () => { setBusy(true); setError(''); try { await post('/teacher/imports/' + id + '/start'); await load(); } catch (error) { setError(message(error)); } finally { setBusy(false); } }}><Icon name="spark" size={18} />Savollarni ajratish</button></> : <p>{record.error || 'Savollar, umumiy matnlar va rasmlar ajratilmoqda. Ilovani yopishingiz mumkin — tayyor bo‘lgach, bot xabar beradi.'}</p>}{record.status === 'failed' && <button disabled={busy} onClick={async () => { setBusy(true); try { await post('/teacher/imports/' + id + '/retry'); await load(); } catch (error) { setError(message(error)); } finally { setBusy(false); } }}><Icon name="refresh" size={18} />Qayta urinish</button>}</section> : <fieldset className="editor-fields" disabled={busy}>
       <section className="card document-overview"><div className="overview-top"><span className="list-icon"><Icon name="file" size={23} /></span><div><span className="eyebrow">TEST MA’LUMOTLARI</span><Field label="Test nomi" rows={1} value={document.title} onChange={title => change({ ...document, title })} /></div></div>
-        <PublicationFields visibility={record.visibility} subject={record.subject} change={(visibility, subject) => { metadata.current = { visibility, subject }; setRecord({ ...record, visibility, subject }); setDirty(true); }} />
+        <PublicationFields visibility={record.visibility} subject={record.subject} duration={record.duration_minutes} change={(visibility, subject, duration_minutes) => { metadata.current = { visibility, subject, duration_minutes }; setRecord({ ...record, visibility, subject, duration_minutes }); setDirty(true); }} />
         <div className="document-meta"><span><strong>{document.questions.length}</strong> ta savol</span><span><strong>{document.questions.filter(q => q.kind === 'open').length}</strong> ta ochiq javob</span><span className="reviewed-count"><Icon name="check" size={16} /><strong>{reviewed}/{document.questions.length}</strong> tasdiqlangan</span></div>
         {!!document.warnings.length && <details className="warning-details"><summary><Icon name="help" size={16} />E’tibor talab qiladi ({document.warnings.length})</summary><ul>{document.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul></details>}
         <details className="bulk-keys"><summary><Icon name="grid" size={16} />Javoblar kalitini birga kiritish<Icon name="plus" size={16} /></summary><p className="muted">Variantli savollar kalitlarini tez kiriting. Keyin har bir savolni alohida tekshirib tasdiqlang.</p><Field label="Javoblar kaliti" placeholder="1:A, 2:F, 3:B" value={keys} onChange={setKeys} /><button className="secondary" onClick={() => {
@@ -326,9 +355,10 @@ function PassageEditor({ passage: p, pages, update, remove }: { passage: Passage
   return <article className="passage-editor"><p className="eyebrow">UMUMIY MATN · {p.id}</p><Field label="Matn sarlavhasi" value={p.title} rows={1} onChange={title => update({ ...p, title })} /><Field label="Umumiy matn, izohlar va lug‘at" value={p.text} rows={12} onChange={text => update({ ...p, text })} /><RegionEditor regions={p.media} pages={pages} update={media => update({ ...p, media })} /><button className="danger" onClick={async () => { if (await confirm({ title: 'Umumiy matn o‘chirilsinmi?', description: 'Matnga bog‘langan savollarni ham tekshirib chiqishingiz kerak bo‘ladi.', action: 'Matnni o‘chirish', danger: true })) remove(); }}>Matnni o‘chirish</button></article>;
 }
 
-function Attempt({ initial, back }: { initial: StudentTest; back(): void }) {
+function Attempt({ initial, back, done }: { initial: StudentTest; back(): void; done(): void }) {
   const [answers, setAnswers] = useState<Answers>(initial.draft);
   const [result, setResult] = useState<Submission | null>(initial.submission);
+  const clock = useAttemptTimer(initial, result, setResult);
   const [index, setIndex] = useState(0);
   const [review, setReview] = useState(false);
   const [error, setError] = useState('');
@@ -349,20 +379,29 @@ function Attempt({ initial, back }: { initial: StudentTest; back(): void }) {
   async function flush() {
     while (saving.current) await saving.current;
     const serialized = JSON.stringify(latest.current);
-    if (serialized === saved.current || result) return;
+    if (result) return;
+    if (clock.isExpired()) { await clock.sync(); return; }
+    if (serialized === saved.current) return;
     if (conflict.current) throw new Error('Javoblar boshqa oynada o‘zgargan. Qayta ochishdan oldin javoblaringizni nusxalang.');
     const task = (async () => {
       setSaveState('Saqlanmoqda…');
       try {
         const value = await post<{ revision: number }>('/tests/' + initial.code + '/draft', { answers: JSON.parse(serialized), revision: revision.current });
         revision.current = value.revision; saved.current = serialized; setSaveState(JSON.stringify(latest.current) === serialized ? 'Saqlangan' : 'Saqlanmoqda…');
-      } catch (error) { if (error instanceof ApiError && error.status === 409) conflict.current = true; setSaveState('Saqlanmadi · qayta uriniladi'); throw error; }
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 409 && initial.timer) {
+          const status = await clock.sync();
+          if (status?.submission) { setSaveState('Topshirilgan'); return; }
+        }
+        if (error instanceof ApiError && error.status === 409) conflict.current = true;
+        setSaveState('Saqlanmadi · qayta uriniladi'); throw error;
+      }
     })();
     saving.current = task;
     try { await task; } finally { saving.current = null; }
   }
   useExitGuard(flush);
-  useTelegramBack(() => { if (busy) return; if (review && !result) { setReview(false); return; } if (result) back(); else void flush().then(back).catch(error => setError(message(error))); });
+  useTelegramBack(() => { if (busy) return; if (review && !result) { setReview(false); return; } if (result) done(); else void flush().then(back).catch(error => setError(message(error))); });
   useEffect(() => {
     const timer = setInterval(() => { if (!result) void flush().catch(error => setError(message(error))); }, 1500);
     return () => clearInterval(timer);
@@ -380,6 +419,7 @@ function Attempt({ initial, back }: { initial: StudentTest; back(): void }) {
     return () => clearInterval(timer);
   }, [Boolean(result)]);
   function change(value: string | Record<string, string>) {
+    if (busy || result || clock.isExpired()) return;
     const next = { ...latest.current, [q.number]: value }; latest.current = next; setAnswers(next); setSaveState('Saqlanmoqda…'); setError('');
   }
   async function submit() {
@@ -393,7 +433,7 @@ function Attempt({ initial, back }: { initial: StudentTest; back(): void }) {
   const currentParts = typeof currentAnswer === 'object' ? currentAnswer : {};
   function goTo(next: number) {
     const passageChanged = questions[next]?.passage_id && questions[next].passage_id !== q?.passage_id;
-    setIndex(next); setReview(false);
+    setIndex(next); setReview(false); if (!wideMap) setNavOpen(false);
     requestAnimationFrame(() => {
       questionHeading.current?.focus({ preventScroll: true });
       (passageChanged ? attemptMain.current : questionHeading.current)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -404,18 +444,21 @@ function Attempt({ initial, back }: { initial: StudentTest; back(): void }) {
     return typeof value === 'string' && value.trim() ? value : 'Javob yo‘q';
   }
   return <>
-    <button className="back-link" disabled={busy} onClick={() => { if (result) back(); else void flush().then(back).catch(error => setError(message(error))); }}><Icon name="back" size={17} />Test haqida</button>
+    <button className="back-link" disabled={busy} onClick={() => { if (result) done(); else void flush().then(back).catch(error => setError(message(error))); }}><Icon name="back" size={17} />{result ? 'Ro‘yxatga qaytish' : 'Test haqida'}</button>
     <section className="attempt-heading"><div><div className="actions"><strong>{initial.publisher_name}</strong><span className="muted">{questions.length} ta savol</span></div><h1>{initial.document.title}</h1></div>{!result && <span className={'save-state ' + (saveState !== 'Saqlangan' ? 'saving' : '')} role="status"><Icon name={saveState === 'Saqlangan' ? 'check' : 'clock'} size={15} />{saveState}</span>}</section>
-    {error && <Alert>{error}</Alert>}
-    {result ? <StudentResult result={result} back={back} /> : initial.status !== 'active' ? <section className="card"><EmptyState icon="clock" title="Test yakunlangan" action={<button className="secondary" onClick={back}>Boshqa testga kirish</button>}>Bu testga yangi javoblar qabul qilinmaydi.</EmptyState></section> : review ? <>
+    {!result && clock.seconds !== null && <div className={'attempt-timer ' + (clock.expired ? 'timer-expired' : clock.seconds <= 60 ? 'timer-urgent' : '')}><Icon name="clock" size={22} /><div><strong>{clock.expired ? 'Vaqt tugadi' : 'Qolgan vaqt'}</strong><span>{clock.expired ? 'Saqlangan javoblar topshirilmoqda…' : 'Ilovani yopish vaqtni to‘xtatmaydi'}</span></div><output role="timer" aria-live="off" aria-label="Qolgan vaqt">{formatCountdown(clock.seconds)}</output></div>}
+    {!result && clock.seconds !== null && clock.seconds > 0 && clock.seconds <= 60 && <p className="timer-warning" role="alert">Bir daqiqa yoki undan kam vaqt qoldi. Javoblaringiz saqlanganini tekshiring.</p>}
+    {!result && clock.problem && <Alert tone="warning">{clock.problem}<button className="quiet" onClick={() => void clock.sync().catch(() => {})}>Qayta ulanish</button></Alert>}
+    {error && !result && <Alert>{error}</Alert>}
+    {result ? <StudentResult result={result} back={done} /> : initial.status !== 'active' ? <section className="card"><EmptyState icon="clock" title="Test yakunlangan" action={<button className="secondary" onClick={back}>Boshqa testga kirish</button>}>Bu testga yangi javoblar qabul qilinmaydi.</EmptyState></section> : review ? <>
       <section className="card review-summary"><span className="eyebrow">YAKUNIY TEKSHIRUV</span><h2>Hammasi tayyormi?</h2><p>Javobni o‘zgartirish uchun savol ustiga bosing. Tasdiqlagach, javoblarni o‘zgartirib bo‘lmaydi.</p><div className="review-counts"><span><strong>{count}</strong> javob berilgan</span><span className={count < questions.length ? 'unanswered-count' : ''}><strong>{questions.length - count}</strong> to‘liq javobsiz</span></div>{count < questions.length && <Alert tone="warning">{questions.length - count} ta savol to‘liq javobsiz. Bo‘sh yoki to‘liq bo‘lmagan javoblar noto‘g‘ri hisoblanadi.</Alert>}</section>
-      <section className="card review-list"><div className="section-heading"><h2>Javoblaringiz</h2><span className="muted">{questions.length} ta savol</span></div>{questions.map((q, i) => <button className="review-row" disabled={busy} key={q.number} onClick={() => goTo(i)}><span className={'review-number ' + (questionAnswered(q.parts, answers[q.number]) ? 'answered' : '')}>{q.number}</span><span><strong>{q.number}-savol</strong><span className="answer-preview">{answerPreview(answers[q.number], q.parts)}</span></span><Icon name="edit" size={17} /></button>)}</section><footer className="sticky attempt-footer"><button className="secondary" disabled={busy} onClick={() => setReview(false)}><Icon name="back" size={17} />Savollarga qaytish</button><button disabled={busy} onClick={() => void submit()}>{busy ? <><span className="spinner" />Topshirilmoqda…</> : <>Tasdiqlash va topshirish<Icon name="send" size={17} /></>}</button></footer>
+      <section className="card review-list"><div className="section-heading"><h2>Javoblaringiz</h2><span className="muted">{questions.length} ta savol</span></div>{questions.map((q, i) => <button className="review-row" disabled={busy} key={q.number} onClick={() => goTo(i)}><span className={'review-number ' + (questionAnswered(q.parts, answers[q.number]) ? 'answered' : '')}>{q.number}</span><span><strong>{q.number}-savol</strong><span className="answer-preview">{answerPreview(answers[q.number], q.parts)}</span></span><Icon name="edit" size={17} /></button>)}</section><footer className="sticky attempt-footer"><button className="secondary" disabled={busy} onClick={() => setReview(false)}><Icon name="back" size={17} />Savollarga qaytish</button><button disabled={busy || clock.expired} onClick={() => void submit()}>{busy ? <><span className="spinner" />Topshirilmoqda…</> : <>Tasdiqlash va topshirish<Icon name="send" size={17} /></>}</button></footer>
     </> : q && <>
       <div className="attempt-progress"><div className="progress-label"><span><strong>{count}</strong> / {questions.length} javob berilgan</span><button className="quiet" onClick={() => setReview(true)}>Javoblarim<Icon name="arrow" size={15} /></button></div><progress aria-label="Javob berilgan savollar" value={count} max={questions.length} /></div>
       <div className="attempt-layout"><aside className={'card question-map ' + (navOpen ? 'map-open' : '')}><button className="map-toggle" onClick={() => setNavOpen(value => !value)} aria-expanded={navOpen || wideMap} aria-controls="question-map"><span><Icon name="grid" size={18} />Savollar</span><span>{index + 1}/{questions.length}<Icon name="chevron" size={16} /></span></button><div className="map-content" id="question-map"><nav className="question-nav" aria-label="Savollar orasida o‘tish">{questions.map((question, i) => <button key={question.number} aria-current={i === index ? 'step' : undefined} aria-label={`${question.number}-savol${questionAnswered(question.parts, answers[question.number]) ? ', javob berilgan' : ', javobsiz'}`} className={i === index ? 'selected' : questionAnswered(question.parts, answers[question.number]) ? 'complete' : 'secondary'} onClick={() => goTo(i)}>{question.number}</button>)}</nav><div className="map-legend"><span><i className="legend-current" />Hozirgi savol</span><span><i className="legend-answered" />Javob berilgan</span><span><i />Javobsiz</span></div><p className="map-note"><Icon name="shield" size={17} />Topshirmaguningizcha javoblarni o‘zgartira olasiz.</p></div></aside><div ref={attemptMain} className="attempt-main">
       {passage && <details className="card passage" open><summary><span><Icon name="book" size={18} />{passage.title || 'Savol uchun umumiy matn'}</span><Icon name="chevron" size={17} /></summary><div className="passage-content"><RichText text={passage.text} />{passage.media.map(id => <img className="question-image" key={id} src={assetUrl(id)} alt="Matnga tegishli rasm" />)}</div></details>}
       <section className="card question-card"><div className="section-heading"><span className="eyebrow">{String(q.number).padStart(2, '0')}-SAVOL</span><span className="question-kind">{q.kind === 'open' ? 'Ochiq javob' : q.kind === 'matching' ? 'Moslashtirish' : 'Variantli savol'}</span></div><h2 ref={questionHeading} tabIndex={-1} className="question-text"><RichText text={q.text} /></h2>{q.media.map(id => <img className="question-image" key={id} src={assetUrl(id)} alt="Savol diagrammasi" />)}
-        {q.kind !== 'open' ? <fieldset className="choices"><legend>Bitta javobni tanlang</legend>{q.options.map(option => <label className={answers[q.number] === option.label ? 'chosen' : ''} key={option.label}><input type="radio" name={'q' + q.number} checked={answers[q.number] === option.label} onChange={() => change(option.label)} /><span className="choice-letter">{option.label}</span><RichText text={option.text} /><span className="choice-indicator"><Icon name="check" size={13} /></span></label>)}<button className="quiet clear-choice" disabled={!answers[q.number]} onClick={() => change('')}>Tanlovni tozalash</button></fieldset> : <div className="open-answer">{q.parts.length ? <><p className="muted">Har bir qismga alohida javob yozing.</p>{q.parts.map(part => <Field key={part.id} label={`${part.id}) ${part.prompt}`} placeholder="Javobingizni shu yerga yozing…" value={currentParts[part.id] || ''} onChange={value => change({ ...currentParts, [part.id]: value })} />)}</> : <Field label="Javobingiz" placeholder="Fikringizni aniq va to‘liq yozing…" rows={6} value={typeof currentAnswer === 'string' ? currentAnswer : ''} onChange={change} />}<span className="answer-hint"><Icon name="edit" size={14} />Javobingiz avtomatik saqlanadi.</span></div>}
+        <fieldset className="editor-fields" disabled={busy || clock.expired}>{q.kind !== 'open' ? <fieldset className="choices"><legend>Bitta javobni tanlang</legend>{q.options.map(option => <label className={answers[q.number] === option.label ? 'chosen' : ''} key={option.label}><input type="radio" name={'q' + q.number} checked={answers[q.number] === option.label} onChange={() => change(option.label)} /><span className="choice-letter">{option.label}</span><RichText text={option.text} /><span className="choice-indicator"><Icon name="check" size={13} /></span></label>)}<button className="quiet clear-choice" disabled={!answers[q.number]} onClick={() => change('')}>Tanlovni tozalash</button></fieldset> : <div className="open-answer">{q.parts.length ? <><p className="muted">Har bir qismga alohida javob yozing.</p>{q.parts.map(part => <Field key={part.id} label={`${part.id}) ${part.prompt}`} placeholder="Javobingizni shu yerga yozing…" value={currentParts[part.id] || ''} onChange={value => change({ ...currentParts, [part.id]: value })} />)}</> : <Field label="Javobingiz" placeholder="Fikringizni aniq va to‘liq yozing…" rows={6} value={typeof currentAnswer === 'string' ? currentAnswer : ''} onChange={change} />}<span className="answer-hint"><Icon name="edit" size={14} />Javobingiz avtomatik saqlanadi.</span></div>}</fieldset>
       </section></div></div><footer className="sticky attempt-footer"><button className="secondary" disabled={index === 0} onClick={() => goTo(index - 1)}><Icon name="back" size={17} /><span>Oldingi</span></button><span className="footer-position">{index + 1} / {questions.length}</span>{index < questions.length - 1 ? <button onClick={() => goTo(index + 1)}>Keyingi savol<Icon name="arrow" size={17} /></button> : <button onClick={() => setReview(true)}>Yakuniy tekshiruv<Icon name="check" size={17} /></button>}</footer>
     </>}
   </>;
@@ -426,13 +469,14 @@ function StudentResult({ result, back }: { result: Submission; back(): void }) {
   const pending = result.answers.filter(a => a.correct === null).length;
   const wrong = result.answers.length - correct - pending;
   return <>
-    <section className="card result-hero"><span className="result-check"><Icon name="check" size={30} /></span><span className="eyebrow">{result.score === undefined ? 'JAVOBLAR TOPSHIRILDI' : 'YAKUNIY NATIJA'}</span><h2>{result.score === undefined ? 'Barakalla, test topshirildi!' : 'Mehnatingiz natijasi.'}</h2><p>{result.score === undefined ? 'Javoblaringiz qabul qilindi va saqlandi.' : 'O‘qituvchi testni yakunladi. Yakuniy natijangiz tayyor.'}</p>{result.score !== undefined && <div className="score-summary"><div><strong>{result.score}<small>ball</small></strong><span>To‘plangan ball</span></div><div><strong>{result.rank}<small>-o‘rin</small></strong><span>Reytingdagi o‘rningiz</span></div></div>}<div className="result-counts"><span><i className="result-dot correct" /><strong>{correct}</strong> to‘g‘ri</span><span><i className="result-dot incorrect" /><strong>{wrong}</strong> noto‘g‘ri</span>{pending > 0 && <span><i className="result-dot pending" /><strong>{pending}</strong> tekshirilmoqda</span>}</div></section>
-    {result.score === undefined && <div className="result-waiting"><span className="stat-icon"><Icon name="clock" size={23} /></span><div><h3>Ball va o‘rin birozdan so‘ng.</h3><p>{pending ? 'Ochiq javoblar tekshirilmoqda. ' : ''}O‘qituvchi testni yakunlagach, ball va o‘rningiz shu yerda ko‘rinadi. Natija avtomatik yangilanadi.</p></div></div>}
-    <section className="card"><div className="section-heading"><h2>Savollar bo‘yicha natija</h2><span className="muted">{result.answers.length} ta savol</span></div><div className="result-grid">{result.answers.map(answer => <div className={'result-cell ' + (answer.correct === null ? 'pending' : answer.correct ? 'correct' : 'incorrect')} key={answer.number} aria-label={`${answer.number}-savol: ${answer.correct === null ? 'tekshirilmoqda' : answer.correct ? 'to‘g‘ri' : 'noto‘g‘ri'}`}><strong>{String(answer.number).padStart(2, '0')}</strong><Icon name={answer.correct === null ? 'clock' : answer.correct ? 'check' : 'close'} size={16} /></div>)}</div><div className="result-legend"><span><i className="result-dot correct" />To‘g‘ri</span><span><i className="result-dot incorrect" />Noto‘g‘ri</span><span><i className="result-dot pending" />Tekshirilmoqda</span></div></section><div className="result-back"><button className="secondary" onClick={back}><Icon name="back" size={17} />Boshqa testga kirish</button></div>
+    {result.auto_submitted && <Alert tone="warning">Vaqt tugadi. Vaqt tugashidan oldin serverda saqlangan javoblaringiz avtomatik topshirildi.</Alert>}
+    <section className="card result-hero"><span className="result-check"><Icon name="check" size={30} /></span><span className="eyebrow">{result.score === undefined ? 'JAVOBLAR TOPSHIRILDI' : 'YAKUNIY NATIJA'}</span><h2>{result.score === undefined ? 'Javoblaringiz qabul qilindi' : 'Mehnatingiz natijasi.'}</h2><p>{result.score === undefined ? 'Har bir savol bo‘yicha javob holati quyida ko‘rsatilgan.' : 'O‘qituvchi testni yakunladi. Yakuniy natijangiz tayyor.'}</p>{result.score !== undefined && <div className="score-summary"><div><strong>{result.score}<small>ball</small></strong><span>To‘plangan ball</span></div><div><strong>{result.rank}<small>-o‘rin</small></strong><span>Reytingdagi o‘rningiz</span></div></div>}<div className="result-counts"><span><i className="result-dot correct" /><strong>{correct}</strong> to‘g‘ri</span><span><i className="result-dot incorrect" /><strong>{wrong}</strong> noto‘g‘ri</span>{pending > 0 && <span><i className="result-dot pending" /><strong>{pending}</strong> tekshirilmoqda</span>}</div></section>
+    {result.score === undefined && <div className="result-waiting"><span className="stat-icon"><Icon name="clock" size={23} /></span><div><h3>{pending ? 'Ochiq javoblar tekshirilmoqda' : 'O‘qituvchi yakunlashi kutilmoqda'}</h3><p>{pending ? 'Tekshiruv tugagach, javoblar holati yangilanadi. ' : ''}O‘qituvchi testni yakunlagach, ball va o‘rningiz shu yerda ko‘rinadi. Natija avtomatik yangilanadi.</p></div></div>}
+    <section className="card"><div className="section-heading"><h2>Savollar bo‘yicha natija</h2><span className="muted">{result.answers.length} ta savol</span></div><div className="result-grid">{result.answers.map(answer => <div className={'result-cell ' + (answer.correct === null ? 'pending' : answer.correct ? 'correct' : 'incorrect')} key={answer.number} aria-label={`${answer.number}-savol: ${answer.correct === null ? 'tekshirilmoqda' : answer.correct ? 'to‘g‘ri' : 'noto‘g‘ri'}`}><strong>{String(answer.number).padStart(2, '0')}</strong><Icon name={answer.correct === null ? 'clock' : answer.correct ? 'check' : 'close'} size={16} /></div>)}</div><div className="result-legend"><span><i className="result-dot correct" />To‘g‘ri</span><span><i className="result-dot incorrect" />Noto‘g‘ri</span><span><i className="result-dot pending" />Tekshirilmoqda</span></div></section><div className="result-back"><button className="secondary" onClick={back}><Icon name="back" size={17} />Ro‘yxatga qaytish</button></div>
   </>;
 }
 
-function TeacherResults({ id, back, newSession }: { id: number; back(): void; newSession(id: number): void }) {
+function TeacherResults({ id, back, newSession, manage }: { id: number; back(): void; newSession(id: number): void; manage: boolean }) {
   const confirm = useConfirmation();
   useTelegramBack(back);
   const [result, setResult] = useState<Results | null>(null);
@@ -441,6 +485,7 @@ function TeacherResults({ id, back, newSession }: { id: number; back(): void; ne
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState('');
   const [view, setView] = useState<'participants' | 'analysis'>('participants');
+  const [sharing, setSharing] = useState(manage);
   const [copied, setCopied] = useState(false);
   const sessionRequest = useRef(crypto.randomUUID().replaceAll('-', ''));
   const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -463,14 +508,15 @@ function TeacherResults({ id, back, newSession }: { id: number; back(): void; ne
   }
   return <><button className="back-link" onClick={back}><Icon name="back" size={17} />O‘qituvchi kabineti</button>{error && <Alert>{error}</Alert>}{result ? <>
     <div className="page-heading"><div><div className="actions"><span className="eyebrow">TEST VA NATIJALAR</span><Badge status={result.test.status} /></div><h1>{result.test.title}</h1><p>Ishtirokchilar, javoblar va yakuniy hisobot — bir joyda.</p></div>{result.test.status === 'finished' && <a className="button" href={`/api/teacher/tests/${id}/report`}><Icon name="download" size={18} />Excel hisobot</a>}</div>
-    <section className="card share-panel"><div className="section-heading"><div><span className="eyebrow">O‘QUVCHILARGA ULASHISH</span><h2>{result.test.publisher_name}</h2><p className="muted">{sessionDate(result.test.created_at)} · {result.test.id}-sessiya</p></div><span className="catalog-subject-tag">{visibilityLabel(result.test.visibility)}</span></div><label className="field">Test havolasi<input readOnly value={result.test.share_url} onFocus={event => event.target.select()} /></label><div className="actions"><button className="secondary" onClick={() => void copyCode()}><Icon name={copied ? 'check' : 'copy'} size={17} />{copied ? 'Nusxalandi' : 'Havolani nusxalash'}</button><a className="button" href={'https://t.me/share/url?' + new URLSearchParams({ url: result.test.share_url, text: result.test.title + ' · ' + result.test.publisher_name })} target="_blank" rel="noreferrer">Telegramda ulashish<Icon name="send" size={17} /></a></div>{result.test.template_id && <><ListingSettings test={result.test} saved={refresh} /><hr /><p>Yangi guruh uchun shu savollardan alohida sessiya oching. Avvalgi javoblar va reyting o‘z sessiyasida saqlanadi.</p><button className="secondary" disabled={busy} onClick={async () => {
+    <details className="card share-panel" open={sharing} onToggle={event => setSharing(event.currentTarget.open)}><summary><span><Icon name="send" size={18} />Havola va test sozlamalari</span><Icon name="chevron" size={18} /></summary><div className="share-content"><div className="section-heading"><div><span className="eyebrow">O‘QUVCHILARGA ULASHISH</span><h2>{result.test.publisher_name}</h2><p className="muted">{sessionDate(result.test.created_at)} · {result.test.id}-sessiya</p></div><span className="catalog-subject-tag">{visibilityLabel(result.test.visibility)}</span></div><label className="field">Test havolasi<input readOnly value={result.test.share_url} onFocus={event => event.target.select()} /></label><div className="actions"><button className="secondary" onClick={() => void copyCode()}><Icon name={copied ? 'check' : 'copy'} size={17} />{copied ? 'Nusxalandi' : 'Havolani nusxalash'}</button><a className="button" href={'https://t.me/share/url?' + new URLSearchParams({ url: result.test.share_url, text: result.test.title + ' · ' + result.test.publisher_name })} target="_blank" rel="noreferrer">Telegramda ulashish<Icon name="send" size={17} /></a></div>{result.test.template_id && <details className="session-settings"><summary>Ko‘rinish, fan va vaqt chegarasi<Icon name="edit" size={17} /></summary><ListingSettings test={result.test} saved={refresh} /><hr /><p>Yangi guruh uchun shu savollardan alohida sessiya oching. Avvalgi javoblar va reyting o‘z sessiyasida saqlanadi.</p><button className="secondary" disabled={busy} onClick={async () => {
         if (!await confirm({ title: 'Yangi sessiya ochilsinmi?', description: 'Shu savollar bilan yangi havola yaratiladi. Qatnashchilar va ballar alohida hisoblanadi.', action: 'Yangi sessiya ochish' })) return;
         setBusy(true); setError('');
         try { const created = await post<{ test_id: number }>(`/teacher/tests/${id}/session`, { request_key: sessionRequest.current }); newSession(created.test_id); }
         catch (error) { setError(message(error)); } finally { setBusy(false); }
-      }}><Icon name="plus" size={17} />Yangi sessiya</button></>}</section>
+      }}><Icon name="plus" size={17} />Yangi sessiya</button></details>}</div></details>
     <div className="stats-grid"><div className="stat-card"><span className="stat-icon"><Icon name="users" /></span><div><span>Qatnashchilar</span><strong>{result.submissions.length}</strong></div></div><div className="stat-card"><span className="stat-icon pink"><Icon name="book" /></span><div><span>Jami savollar</span><strong>{result.test.total_questions}</strong></div></div><div className="stat-card"><span className="stat-icon amber"><Icon name="clock" /></span><div><span>Tekshirish kutilmoqda</span><strong>{pending}</strong></div></div></div>
-    {result.test.status === 'active' && <section className="finish-panel"><div><h3>{pending ? 'Tekshiriladigan javoblar bor.' : 'Natijalarni e’lon qilishga tayyormisiz?'}</h3><p>{pending ? `${pending} ta javobni tekshiring yoki AI tekshiruvini qayta boshlang.` : 'Yakunlagach, yangi javoblar yopiladi va barcha ballar hisoblanadi.'}</p></div><div className="actions"><button className="secondary" disabled={busy} onClick={() => void action('retry-grading')}><Icon name="refresh" size={17} />Qayta tekshirish</button><button disabled={busy || pending > 0} onClick={async () => { if (await confirm({ title: 'Test yakunlansinmi?', description: 'Yangi javoblar qabul qilinmaydi. Savollar qiyinligi bo‘yicha ballar va o‘quvchilar reytingi hisoblanib, natijalar e’lon qilinadi.', action: 'Testni yakunlash' })) void action('finish'); }}>Testni yakunlash<Icon name="check" size={17} /></button></div></section>}
+    {!!result.test.active_attempts && <Alert tone="warning">{result.test.active_attempts} ta o‘quvchi vaqtli testni ishlamoqda. Ular topshirishini yoki vaqt tugashini kuting.</Alert>}
+    {result.test.status === 'active' && <section className="finish-panel"><div><h3>{pending ? 'Tekshiriladigan javoblar bor.' : 'Natijalarni e’lon qilishga tayyormisiz?'}</h3><p>{pending ? `${pending} ta javobni tekshiring yoki AI tekshiruvini qayta boshlang.` : 'Yakunlagach, yangi javoblar yopiladi va barcha ballar hisoblanadi.'}</p></div><div className="actions"><button className="secondary" disabled={busy} onClick={() => void action('retry-grading')}><Icon name="refresh" size={17} />Qayta tekshirish</button><button disabled={busy || pending > 0 || Boolean(result.test.active_attempts)} onClick={async () => { if (await confirm({ title: 'Test yakunlansinmi?', description: 'Yangi javoblar qabul qilinmaydi. Savollar qiyinligi bo‘yicha ballar va o‘quvchilar reytingi hisoblanib, natijalar e’lon qilinadi.', action: 'Testni yakunlash' })) void action('finish'); }}>Testni yakunlash<Icon name="check" size={17} /></button></div></section>}
     <nav className="tabs results-tabs" aria-label="Natija bo‘limlari"><button className={view === 'participants' ? 'selected' : ''} aria-pressed={view === 'participants'} onClick={() => setView('participants')}><Icon name="users" size={17} />Qatnashchilar<span>{result.submissions.length}</span></button>{result.test.status === 'finished' && <button className={view === 'analysis' ? 'selected' : ''} aria-pressed={view === 'analysis'} onClick={() => setView('analysis')}><Icon name="chart" size={17} />Savollar tahlili</button>}</nav>
     {view === 'participants' ? <div className={'results-layout ' + (participant ? 'has-selection' : '')}><section className="card participants-card"><div className="section-heading"><h2>{result.test.status === 'finished' ? 'Yakuniy reyting' : 'Qatnashchilar'}</h2><span className="live-indicator"><span />Avtomatik yangilanadi</span></div><label className="search-field"><Icon name="search" size={17} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="O‘quvchini qidirish…" aria-label="Qatnashchilarni qidirish" /></label>{!participants.length ? <EmptyState icon="users" title={search ? 'O‘quvchi topilmadi' : 'Birinchi javobni kutamiz'}>{search ? 'Boshqa ism yoki ID bilan qidirib ko‘ring.' : 'Test havolasini ulashing. Javob topshirgan o‘quvchilar shu yerda ko‘rinadi.'}</EmptyState> : <div className="participant-list">{participants.map(sub => <button className={'participant-row ' + (selected === sub.id ? 'participant-selected' : '')} key={sub.id} onClick={() => setSelected(sub.id)} aria-pressed={selected === sub.id}><span className="participant-avatar">{result.test.status === 'finished' ? sub.rank : (sub.first_name || 'O‘quvchi').slice(0, 1).toUpperCase()}</span><span className="participant-name"><strong>{sub.first_name} {sub.last_name || ''}</strong><small>{result.answers.some(a => a.submission_id === sub.id && a.grading_status !== 'done') ? 'Javoblar tekshirilmoqda' : 'Javoblar tekshirilgan'}</small></span><span className="participant-score"><strong>{result.test.status === 'finished' ? sub.total_score : sub.total_correct}</strong><small>{result.test.status === 'finished' ? 'ball' : 'to‘g‘ri'}</small></span><Icon name="chevron" size={16} /></button>)}</div>}</section>
     {participant && <section ref={answerDetail} className="card answer-detail" aria-label="Tanlangan o‘quvchining javoblari"><div className="section-heading"><div><span className="eyebrow">O‘QUVCHI JAVOBLARI</span><h2>{participant.first_name} {participant.last_name || ''}</h2></div><button className="icon-button" aria-label="O‘quvchi javoblarini yopish" onClick={() => setSelected(null)}><Icon name="close" /></button></div><p className="muted">Telegram ID: {participant.user_id}</p>{result.answers.filter(a => a.submission_id === selected).map(answer => <article className="answer-review" key={answer.id}><div className="section-heading"><strong>{answer.question_num}-savol</strong><span className={'answer-status ' + (answer.grading_status !== 'done' ? 'pending' : answer.is_correct ? 'correct' : 'incorrect')}><Icon name={answer.grading_status !== 'done' ? 'clock' : answer.is_correct ? 'check' : 'close'} size={14} />{answer.grading_status !== 'done' ? 'Tekshirilmoqda' : answer.is_correct ? 'To‘g‘ri' : 'Noto‘g‘ri'}</span></div><p className="student-written-answer">{answer.user_answer || 'Javob berilmagan'}</p>{answer.ai_feedback && <p className="feedback-text">{answer.ai_feedback}</p>}{result.test.status === 'active' && <div className="override-actions"><button className="secondary" disabled={busy} aria-pressed={answer.grading_status === 'done' && Boolean(answer.is_correct)} onClick={() => void action('answers/' + answer.id, { correct: true, feedback: 'O‘qituvchi tasdiqladi.' })}><Icon name="check" size={16} />To‘g‘ri</button><button className="secondary" disabled={busy} aria-pressed={answer.grading_status === 'done' && !answer.is_correct} onClick={() => void action('answers/' + answer.id, { correct: false, feedback: 'O‘qituvchi tekshirdi.' })}><Icon name="close" size={16} />Noto‘g‘ri</button></div>}</article>)}</section>}</div> : <section className="card analysis-card"><div className="section-heading"><h2>Savollar bo‘yicha tahlil</h2><span className="muted">{result.questions.length} ta savol</span></div><p className="muted">Savollar to‘g‘ri javoblar soniga ko‘ra baholandi. Ko‘proq to‘g‘ri javob berilgan savollar osonroq hisoblanadi.</p>{result.questions.map(q => <div className="analysis-row" key={q.question_num}><strong>{q.question_num}-savol</strong><div><div className="analysis-bar"><span style={{ width: `${result.submissions.length ? q.correct_count / result.submissions.length * 100 : 0}%` }} /></div><small>{q.correct_count} / {result.submissions.length} to‘g‘ri</small></div><span className={'tier tier-' + q.assigned_tier}>{({ easy: 'Oson', medium: 'O‘rtacha', hard: 'Qiyin' } as Record<string, string>)[q.assigned_tier || ''] || 'Ochiq'}</span><strong>{q.assigned_points ?? '—'}<small> ball</small></strong></div>)}</section>}

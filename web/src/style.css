@@ -262,3 +262,18 @@ button.catalog-card:hover { border-color: #ae7b99; box-shadow: 0 8px 25px #571f3
   .share-panel .actions > * { width: 100%; }
 }
 button.catalog-card:active:not(:disabled) { background: #fbf5f8; color: inherit; }
+
+.intro-duration { display: flex; gap: 9px; align-items: center; color: var(--plum); margin: 20px 0; }
+.attempt-timer { position: sticky; top: 8px; z-index: 15; display: flex; gap: 12px; align-items: center; padding: 16px 20px; margin: 0 0 22px; background: #fff; border: 1px solid #dfccda; border-radius: 14px; box-shadow: 0 4px 20px #571f3f0b; color: var(--plum); }
+.attempt-timer > div { display: grid; gap: 4px; flex: 1; }
+.attempt-timer strong { font-size: 14px; }
+.attempt-timer span { font-size: 11px; color: #806b79; }
+.attempt-timer output { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.attempt-timer.timer-urgent, .attempt-timer.timer-expired { border-color: #db8e92; background: #fff4f4; color: #9b303a; }
+.timer-warning { color: #9b303a; font-size: 13px; margin-top: -10px; }
+@media (max-width: 650px) {
+  .attempt-timer { padding: 13px; gap: 9px; top: 5px; }
+  .attempt-timer output { font-size: 22px; }
+  .attempt-timer span { font-size: 10px; }
+  .attempt-timer > .icon { display: none; }
+}

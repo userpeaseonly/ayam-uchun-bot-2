@@ -56,6 +56,7 @@ async def main():
         await runner.setup()
         await web.TCPSite(runner, config.WEB_HOST, config.WEB_PORT).start()
         workers = [asyncio.create_task(worker_loop(bot, imports=True)),
+                   asyncio.create_task(worker_loop(bot, timers=True)),
                    *[asyncio.create_task(worker_loop(bot)) for _ in range(config.GRADING_CONCURRENCY)]]
         if config.MINI_APP_URL:
             from aiogram.types import MenuButtonWebApp, WebAppInfo

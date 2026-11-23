@@ -1,0 +1,234 @@
+/* Student navigation and focused assessment screens. */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.student-bottom-nav { display: none; }
+.teacher-entry { display: flex; align-items: center; justify-content: start; width: 100%; text-align: left; padding: 13px 10px; margin-bottom: 16px; background: #faf5f8; color: var(--plum); font-size: 12px; font-weight: 600; }
+.teacher-entry > span { flex: 1; }
+.teacher-entry:hover:not(:disabled), .teacher-entry.nav-active { background: #f1e2eb; color: var(--plum); }
+.account-menu { position: relative; z-index: 30; margin: 0; }
+.account-menu > summary { margin: 0; list-style: none; display: flex; align-items: center; gap: 10px; cursor: pointer; min-height: 44px; padding: 3px 6px; border-radius: 12px; color: var(--plum); }
+.account-menu > summary::-webkit-details-marker { display: none; }
+.account-menu > summary > .icon { transform: rotate(90deg); }
+.account-name { font-size: 13px; max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+.account-dropdown { position: absolute; right: 0; top: calc(100% + 12px); width: 266px; max-width: calc(100vw - 36px); background: #fff; border: 1px solid var(--line); box-shadow: 0 14px 45px #342b3420; border-radius: 16px; padding: 10px; }
+.account-dropdown > strong { display: block; padding: 12px; border-bottom: 1px solid var(--line); margin-bottom: 6px; font-size: 14px; overflow-wrap: anywhere; }
+.account-dropdown button { display: flex; justify-content: start; background: transparent; color: var(--ink); width: 100%; text-align: left; font-size: 13px; min-height: 46px; padding: 12px; }
+.account-dropdown button:hover:not(:disabled) { background: var(--pink-light); }
+.student-heading { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin: 0 0 30px; }
+.student-heading .welcome-greeting { font-size: 13px; color: #796272; margin-bottom: 9px; }
+.student-heading h1 { font-size: 34px; margin-bottom: 8px; }
+.student-heading p { margin-bottom: 0; }
+.free-label { flex-shrink: 0; font-size: 12px; color: var(--green); background: var(--green-bg); border-radius: 20px; padding: 9px 13px; }
+.catalog-section-heading { margin: 30px 0 18px; }
+.catalog-section-heading h2, .resume-section > .section-heading h2 { font-size: 18px; }
+.catalog-toolbar .search-field { background: #fff; border: 1px solid #e3d8df; border-radius: 11px; padding: 0 13px; }
+.catalog-toolbar .search-field input { font-size: 14px; }
+.catalog-toolbar .search-field:focus-within { outline: 3px solid #b8789c; outline-offset: 2px; }
+.catalog-toolbar .search-field input:focus-visible { outline: none; }
+.catalog-toolbar input, .catalog-subject select { min-height: 48px; }
+.catalog-grid { gap: 16px; }
+button.catalog-card { border-radius: 16px; padding: 23px; margin: 0; display: flex; flex-direction: column; align-items: stretch; }
+.catalog-card .section-heading { margin-bottom: 0; flex-wrap: wrap; }
+.catalog-card h2 { font-size: 21px; margin: 20px 0 12px; }
+.catalog-card .publisher-name { font-size: 14px; margin-bottom: 4px; line-height: 1.6; }
+.catalog-meta { gap: 10px 16px; margin: 14px 0 20px; }
+.catalog-meta > span { display: inline-flex; gap: 6px; align-items: center; }
+.catalog-card-bottom { margin-top: auto; font-size: 13px; }
+.catalog-access { color: #48765b; font-size: 12px; }
+.resume-section { margin-bottom: 32px; }
+.resume-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.resume-card { background: #f5e9f0; border: 1px solid #e7ccdc; border-radius: 16px; padding: 21px; min-width: 0; }
+.resume-card .section-heading { align-items: start; flex-wrap: wrap; gap: 8px; margin-bottom: 17px; }
+.resume-card .eyebrow { margin: 0; font-size: 9px; }
+.resume-card h3 { font-size: 18px; line-height: 1.45; color: var(--plum); overflow-wrap: anywhere; }
+.resume-card p { font-size: 13px; margin: 8px 0 17px; }
+.resume-card button { font-size: 13px; min-height: 44px; padding: 10px 16px; }
+.resume-time { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 650; color: var(--plum); font-variant-numeric: tabular-nums; }
+.resume-time.urgent { color: #993540; }
+.student-profile { display: flex; align-items: center; gap: 18px; }
+.student-profile .avatar { width: 64px; height: 64px; font-size: 23px; flex-shrink: 0; }
+.student-profile h2 { margin-bottom: 5px; overflow-wrap: anywhere; }
+.student-profile p { margin-bottom: 0; }
+.teacher-invitation { display: flex; align-items: center; gap: 18px; background: var(--pink-light); }
+.teacher-invitation > div { flex: 1; }
+.teacher-invitation h2 { font-size: 18px; }
+.teacher-invitation p { margin: 0; }
+.teacher-invitation button { flex-shrink: 0; }
+.focus-mode .sidebar, .focus-mode .app-header, .focus-mode .workspace-footer { display: none; }
+.focus-mode .workspace { margin-left: 0; }
+.focus-mode main { max-width: 1150px; padding-top: max(22px, env(safe-area-inset-top, 0px)); }
+.focus-mode .attempt-heading { align-items: center; gap: 16px; margin-bottom: 18px; }
+.focus-mode .attempt-heading h1 { font-family: inherit; font-size: 22px; font-weight: 650; letter-spacing: -.02em; margin-top: 8px; }
+.focus-mode .attempt-heading .actions { font-size: 12px; color: var(--muted); }
+.focus-mode .attempt-heading .actions strong { font-weight: 500; }
+.focus-mode .attempt-heading .muted { font-size: 12px; }
+.focus-mode .attempt-timer { padding: 12px 18px; margin-bottom: 16px; }
+.focus-mode .question-text { scroll-margin-top: 130px; }
+.focus-mode .attempt-main { scroll-margin-top: 130px; }
+.focus-mode .attempt-footer { margin-top: 18px; }
+.focus-mode .attempt-footer button { min-height: 46px; font-size: 13px; }
+.question-map .question-nav button { min-height: 38px; }
+.test-introduction { margin: 0 auto 24px; padding: 32px; }
+.test-introduction h1 { font-size: 34px; margin-top: 26px; }
+.test-introduction .publisher-name { font-size: 16px; }
+.intro-facts { margin: 26px 0 22px; }
+.intro-facts div > .icon { margin: 0 auto 6px; color: #956780; }
+.intro-facts strong { font-size: 25px; }
+.intro-checklist { list-style: none; padding: 0; margin: 24px 0 28px; display: grid; gap: 17px; }
+.intro-checklist li { display: flex; gap: 12px; font-size: 14px; line-height: 1.7; color: #695661; }
+.intro-checklist .icon { color: #956780; margin-top: 3px; }
+.result-waiting h3 { font-size: 15px; }
+
+/* Teachers keep a task-oriented workspace with uploads and settings on demand. */
+.teacher-heading { margin-bottom: 10px; }
+.teacher-heading h1 { font-size: 34px; }
+.teacher-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 22px; padding: 8px 0 20px; font-size: 13px; color: var(--muted); }
+.teacher-summary > span, .teacher-summary > button { display: inline-flex; align-items: center; gap: 6px; }
+.teacher-summary .quiet { font-size: 13px; }
+.teacher-summary strong { color: var(--plum); }
+.teacher-upload { border: 1px solid #e4cad9; border-radius: 18px; background: #fff; padding: 26px; margin: 8px 0 28px; scroll-margin-top: 20px; }
+.teacher-upload > .section-heading { align-items: start; }
+.teacher-upload h2 { margin: 0; }
+.teacher-upload .local-upload { border: 0; border-top: 1px solid var(--line); padding: 24px 0 0; margin: 24px 0 0; border-radius: 0; }
+.teacher-upload .local-upload h3 { display: flex; align-items: center; gap: 9px; font-size: 15px; }
+.upload-steps { list-style: none; display: flex; flex-wrap: wrap; gap: 9px; padding: 0; margin: 20px 0 26px; }
+.upload-steps li { padding: 7px 10px; background: var(--pink-light); color: var(--plum); font-size: 12px; border-radius: 7px; }
+.telegram-upload { display: flex; align-items: center; gap: 20px; }
+.telegram-upload > div { flex: 1; }
+.telegram-upload p { font-size: 13px; margin-bottom: 0; }
+.telegram-upload button { flex-shrink: 0; }
+.teacher-library .library-header { flex-wrap: wrap; padding: 0 24px 20px; gap: 12px 24px; }
+.teacher-library .library-header .tabs { flex: 1; }
+.teacher-library .library-header .search-field { min-width: 230px; }
+.teacher-library .test-list-row { min-height: 92px; }
+.teacher-return { margin-bottom: 23px !important; }
+.share-panel > summary, .session-settings > summary { margin: 0; list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 12px; font-weight: 600; color: var(--plum); min-height: 34px; }
+.share-panel > summary::-webkit-details-marker, .session-settings > summary::-webkit-details-marker { display: none; }
+.share-panel > summary > span { display: flex; align-items: center; gap: 10px; }
+.share-panel[open] > summary > .icon { transform: rotate(90deg); }
+.share-content { padding-top: 26px; }
+.session-settings { margin-top: 24px; border-top: 1px solid var(--line); padding-top: 18px; }
+.session-settings > summary { font-size: 13px; }
+.share-panel .section-heading p { margin-bottom: 0; }
+@media (max-width: 1080px) {
+  .student-bottom-nav { position: fixed; inset: auto 0 0; z-index: 25; display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid #e9dfe6; background: #fffffff7; padding: 6px 12px max(8px, env(safe-area-inset-bottom, 0px)); box-shadow: 0 -4px 20px #571f3f04; }
+  .student-bottom-nav button { display: flex; flex-direction: column; gap: 5px; min-height: 56px; font-size: 11px; background: transparent; color: #84707d; padding: 8px; border-radius: 12px; }
+  .student-bottom-nav button.nav-active { background: #f8edf3; color: var(--plum); font-weight: 700; }
+  .student-bottom-nav button:hover:not(:disabled) { background: #faf1f6; color: var(--plum); }
+  .has-bottom-nav .workspace { padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
+  .has-bottom-nav .workspace-footer { display: none; }
+  .teacher-invitation { flex-wrap: wrap; }
+  .teacher-invitation button { margin-left: 60px; }
+}
+@media (max-width: 640px) {
+  .app-header { min-height: 72px; height: 72px; padding: 12px 18px; }
+  .account-menu > summary { padding-right: 0; }
+  .account-name { display: none; }
+  .account-menu > summary > .icon { width: 12px; }
+  main { padding: 24px 18px 28px; }
+  .student-heading { display: block; margin-bottom: 24px; }
+  .student-heading h1 { font-size: 30px; line-height: 1.22; max-width: 320px; }
+  .student-heading .welcome-greeting { font-size: 12px; }
+  .student-heading p { font-size: 13px; line-height: 1.6; }
+  .free-label { display: inline-block; padding: 6px 10px; font-size: 11px; margin-top: 14px; }
+  .catalog-section-heading { margin-top: 26px; }
+  .catalog-section-heading h2, .resume-section > .section-heading h2 { font-size: 17px; }
+  .catalog-section-heading > .muted { font-size: 10px; }
+  .catalog-toolbar { gap: 10px; margin-bottom: 18px; }
+  .catalog-subject select { min-width: 0; width: 100%; }
+  button.catalog-card { padding: 21px; }
+  .catalog-card h2 { font-size: 20px; margin-top: 18px; }
+  .catalog-card .publisher-name { font-size: 14px; }
+  .catalog-subject-tag { font-size: 11px; }
+  .catalog-card-bottom { font-size: 13px; padding-top: 15px; }
+  .catalog-meta { font-size: 12px; gap: 9px 15px; }
+  .catalog-note { align-items: start; line-height: 1.7; font-size: 11px; }
+  .catalog-note .icon { margin-top: 2px; }
+  .resume-grid { grid-template-columns: minmax(0, 1fr); }
+  .resume-card { padding: 19px; }
+  .resume-card h3 { font-size: 18px; }
+  .resume-section > .section-heading { flex-wrap: wrap; gap: 6px; }
+  .resume-section { margin-bottom: 28px; }
+  .student-profile { align-items: start; gap: 14px; }
+  .student-profile .avatar { width: 44px; height: 44px; font-size: 18px; }
+  .student-profile h2 { font-size: 19px; }
+  .student-profile p, .teacher-invitation p, .publisher-profile p { font-size: 13px; }
+  .teacher-invitation > .list-icon { display: none; }
+  .teacher-invitation button { width: 100%; margin: 0; }
+  .publisher-profile summary { font-size: 14px; line-height: 1.6; }
+  .publisher-profile form button { width: 100%; }
+  .focus-mode main { padding: 16px 16px 24px; }
+  .focus-mode .attempt-heading { display: block; margin-bottom: 16px; }
+  .focus-mode .attempt-heading h1 { font-size: 21px; line-height: 1.4; margin: 6px 0 10px; }
+  .focus-mode .attempt-heading > .save-state { font-size: 11px; }
+  .focus-mode .attempt-timer { padding: 12px 14px; }
+  .focus-mode .attempt-timer strong { font-size: 12px; }
+  .focus-mode .attempt-timer span { font-size: 11px; }
+  .focus-mode .attempt-timer output { font-size: 24px; }
+  .focus-mode .attempt-progress { margin-bottom: 16px; }
+  .focus-mode .progress-label { font-size: 12px; }
+  .focus-mode .attempt-progress .quiet { font-size: 12px; min-height: 44px; }
+  .focus-mode .map-toggle { min-height: 42px; font-size: 13px; }
+  .focus-mode .question-map { padding: 8px 16px; margin-bottom: 14px; }
+  .focus-mode .question-map .question-nav button { min-height: 40px; }
+  .focus-mode .question-text { font-size: 21px; line-height: 1.75; margin: 20px 0; }
+  .focus-mode .choices label { min-height: 54px; font-size: 15px; }
+  .focus-mode .choices legend { font-size: 12px; }
+  .focus-mode .attempt-footer { gap: 8px; padding: 10px; }
+  .focus-mode .attempt-footer button { font-size: 12px; padding: 10px 12px; }
+  .focus-mode .attempt-footer .footer-position { font-size: 11px; }
+  .test-introduction { padding: 24px 20px; margin: 0; }
+  .test-introduction h1 { font-size: 30px; margin-top: 20px; }
+  .test-introduction .publisher-name { font-size: 15px; }
+  .intro-facts { padding: 18px 6px; gap: 6px; margin: 23px 0; }
+  .intro-facts strong { font-size: 22px; }
+  .intro-facts span { font-size: 10px; }
+  .intro-checklist li { font-size: 13px; gap: 10px; }
+  .intro-checklist { gap: 15px; }
+  .teacher-heading { flex-wrap: wrap; gap: 17px; }
+  .mode-teacher .teacher-heading h1 { font-size: 30px; }
+  .teacher-heading p { font-size: 13px; }
+  .teacher-heading > button { min-height: 44px; font-size: 13px; padding: 12px 17px; }
+  .teacher-summary { gap: 3px 18px; font-size: 12px; padding-bottom: 15px; }
+  .teacher-summary .quiet { font-size: 12px; }
+  .teacher-upload { padding: 21px; }
+  .teacher-upload h2 { font-size: 21px; }
+  .teacher-upload p { font-size: 13px; }
+  .upload-steps { gap: 7px; }
+  .upload-steps li { font-size: 11px; padding: 6px 8px; }
+  .telegram-upload { display: block; }
+  .telegram-upload button { width: 100%; margin-top: 16px; font-size: 12px; }
+  .teacher-upload .local-upload { padding-top: 22px; }
+  .teacher-library .library-header { padding: 0 18px 18px; gap: 0; }
+  .teacher-library .library-header .tabs { gap: 22px; width: 100%; flex: auto; }
+  .teacher-library .tabs button { font-size: 13px; }
+  .teacher-library .test-list-row { min-height: 105px; }
+  .teacher-library .list-title strong { font-size: 14px; }
+  .teacher-library .list-title > span { font-size: 11px; }
+  .teacher-return { margin-bottom: 20px !important; }
+  .share-panel > summary { font-size: 14px; }
+  .session-settings > summary { font-size: 12px; line-height: 1.6; }
+  .result-waiting h3 { font-size: 14px; }
+  .result-waiting p { font-size: 12px; }
+  .review-summary p, .result-hero > p { font-size: 13px; }
+  .review-row strong, .answer-preview { font-size: 13px; }
+}
+
+@media (max-width: 640px) { .catalog-toolbar .search-field input { font-size: 16px; } }
+
+.teacher-library .tabs { min-width: 0; overflow-x: auto; overflow-y: hidden; }
+.teacher-library .tabs button { flex-shrink: 0; white-space: nowrap; }
+@media (max-width: 640px) { .teacher-library .library-header .search-field { min-width: 0; } .account-menu > summary { min-width: 50px; } }
+
+.focus-mode .map-legend { font-size: 11px; }
+@media (max-width: 640px) {
+  .teacher-library .library-header .tabs { gap: 18px; }
+  .teacher-library .tabs button { font-size: 12px; }
+  .teacher-library .tabs button > span { display: none; }
+  .focus-mode .map-note { font-size: 11px; }
+  .app-header { height: auto; padding: max(12px, env(safe-area-inset-top, 0px), var(--tg-content-safe-area-inset-top, 0px)) 18px 12px; }
+  .focus-mode main { padding-top: max(16px, env(safe-area-inset-top, 0px), var(--tg-content-safe-area-inset-top, 0px)); }
+}
+
+.publisher-profile > details { margin: 0; }
+.publisher-profile summary { margin: 0; }
+.publisher-profile details[open] > summary { margin-bottom: 16px; }

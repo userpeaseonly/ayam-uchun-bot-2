@@ -253,12 +253,29 @@ not contain uploaded PDFs, page previews, or approved diagram crops.
 
 Anyone with a Telegram account can use both student and teacher workspaces.
 `ADMIN_IDS` is not a teacher allowlist. A publisher must save their full name in
-**O‘qituvchi** before publishing; ownership always uses their authenticated
+**Profil** or the teacher setup form before publishing; ownership always uses their authenticated
 Telegram ID. Names are self-entered, not verified.
 
-Students browse **Testlar katalogi**, search by test/teacher/subject, and open a
-test introduction before answering. **Boshlangan testlar** resumes saved drafts;
-**Natijalarim** includes their own submitted tests and final results.
+The default student workspace has **Testlar**, **Natijalarim**, and **Profil**
+navigation (bottom tabs on phones/tablets, sidebar on desktop). Students search
+by test/teacher/subject and see the publisher's full name, question count and
+duration on every card. Started tests appear above the catalog with saved state,
+a live server-synchronized countdown where applicable, and one-tap **Davom
+ettirish**. **Natijalarim** includes submitted tests and final results.
+
+A test introduction explains timing and submission rules before starting. Test
+screens hide the global header/sidebar/bottom tabs to keep questions, countdown,
+autosave, question map and review controls in focus. Pending open-answer grading
+and waiting for final session scores have separate messages.
+
+Open **O‘qituvchi kabineti** from the account menu, **Profil**, or the desktop
+sidebar. Teachers have **Testlar**, **Qoralamalar**, and **Natijalar** sections.
+**Test yuklash** opens Telegram forwarding and local PDF/photo upload choices.
+Published imports move out of drafts. Opening a test from **Testlar** expands
+sharing controls; opening it from **Natijalar** prioritizes participants and
+results. Visibility, subject, duration and new-session controls are grouped
+under **Havola va test sozlamalari**. Existing teacher/import and student/test
+deep links still open their intended destination directly.
 
 Teachers choose **Ochiq** (Public, discoverable) or **Havola orqali** (Unlisted,
 anyone with the link). Copy/share the session link from the results page. The
@@ -284,6 +301,31 @@ in `ADMIN_IDS` are retained as the future brand distinction, without granting
 access to another teacher's data. Future paid-access checks must extend
 `services/access_policy.py`, which guards question reads, crops, drafts and
 submissions, independently of grading and the eventual provider integration.
+
+### Student time limits
+
+In the teacher's draft editor, set **Vaqt chegarasi (daqiqa)** to 1–1440 whole
+minutes. Leave it empty for an untimed test. The duration appears in the catalog
+and before starting. Published sessions can change their duration through the
+teacher settings only before anyone has started, saved answers or submitted.
+Reused question sets inherit the source session's duration; a new session can
+choose a different limit before students start.
+
+**Testni boshlash** records one server deadline for that student. Refreshing,
+closing Telegram, reopening, or using another device never restarts or pauses it.
+The countdown uses server time and resynchronizes after reconnecting or returning
+to the app. It warns in the last minute and locks inputs when time expires.
+
+Expiry automatically submits the last answers received by the server, including
+blank answers for unanswered questions. Unsaved/offline edits arriving after the
+deadline are not accepted. A dedicated durable expiry worker handles students
+who have closed the app, and resumes after a server restart. Manual submission
+and expiry are idempotent, with the same grading and delayed-score policy.
+Individual expiry does not finalize the whole test; the teacher still closes the
+session once all timed attempts have submitted or expired and grading is done.
+
+Migration 4 preserves existing tests as untimed and retains all results. Keep the
+single-instance deployment and pre-release database/media backup procedure.
 
 ### Mini App and DeepSeek imports
 
@@ -311,7 +353,7 @@ Uploads are accepted from any Telegram user in private chats, with a 20 MB
 combined limit and no more than 30 photo pages. Telegram's hosted Bot API also
 limits file downloads to 20 MB.
 
-The Mini App's teacher page has **Botga PDF yoki rasm yuborish** to return to
+The Mini App's **Test yuklash** panel has **Telegram orqali yuborish** to return to
 the chat. Browser uploads remain available under **Telefondan fayl tanlash**, with
 separate PDF and image inputs. The browser picker depends on the Telegram client;
 forwarding files to the bot works without it. Set `MINI_APP_URL` to the reachable

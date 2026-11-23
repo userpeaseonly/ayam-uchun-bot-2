@@ -389,3 +389,61 @@ Public discovery exposes only active public sessions; students retain their own
 finished/unlisted results in personal history. Profiles are self-entered, not
 verified identities. Shared Telegram `/start t_<public_id>` links work without
 requiring BotFather Main Mini App configuration.
+
+
+## 13. Persistent student timers
+
+`tests.duration_minutes` and `imports.duration_minutes` store optional limits of
+1–1440 whole minutes. Null retains untimed behavior. The duration is session
+metadata and is copied when reusing questions; it cannot change after any start,
+draft, or submission. Version 4 adds these columns, `timed_attempts` and the
+submission `auto_submitted` marker, without timing or rewriting existing tests.
+
+`POST /api/tests/{public_id}/start` checks access and atomically records the start
+and deadline for the authenticated user. Repeats never change the original
+clock. Timed question reads, crops, drafts and submissions require a started
+attempt. Expired writes never accept new answers: they submit the last saved
+draft using the same transactional grading code as a manual submission.
+
+`services/timer_service.py` is the deadline authority. Start queues a persistent
+`expire` job. A separate expiry worker cannot be starved by slow AI calls;
+`recover_jobs()` recovers interrupted work. Student reads also settle an expired
+attempt immediately. Teacher finalization first settles due timers, then blocks
+while any timed attempt is still in progress or grading is pending. Timeout
+submissions preserve correctness-first, points-after-finalization behavior.
+
+`GET /api/tests/{public_id}/timer` returns server/deadline timestamps and any
+submission. The frontend countdown uses monotonic elapsed time, resynchronizes
+on focus/visibility/online changes and periodically, and locks inputs at zero.
+Only answers accepted by the server before the deadline count. Do not trust a
+client timestamp, extend deadlines when refreshing, or use browser-only timers.
+
+
+## 14. Student-first workspace
+
+Default to student discovery. `Workspace` owns the Testlar / Natijalarim / Profil
+navigation; teacher access remains open to everyone through the account menu,
+profile shortcut and desktop sidebar. Do not restore the global role selector.
+Teacher/import and student/test deep links take precedence on entry and are
+consumed within that workspace lifetime, so switching tabs does not reopen an
+old link unexpectedly. All workspace changes still await the registered save
+guard; an unsuccessful save must keep the user on the current screen.
+
+`StudentCatalog` combines public discovery with a separate, unfiltered resumable
+section. Its pagination is independent of catalog search and results. Resume
+opens the existing attempt with the idempotent start endpoint; it must never
+reset the deadline. Resume cards read the authenticated timer endpoint and share
+the server-synchronized countdown hook with the attempt screen. Expiry refreshes
+both lists. Do not start an attempt just to render its catalog or resume card.
+
+Student detail/assessment views hide global navigation. They retain explicit
+back actions, Telegram BackButton support, autosave, progress, question map,
+review, timer guards and correctness-first/delayed-final-score behavior.
+
+Teacher uploads are opened on demand. Drafts omit already-published imports;
+the published assessment remains accessible in Testlar and Natijalar. Opening a
+managed test expands sharing; the results entry keeps it collapsed. Session
+settings and creation are grouped inside sharing controls. The source/editor
+layout, review requirements, ownership checks and irreversible-action
+confirmations remain intact. These UI changes do not add payment logic or alter
+the database schema beyond the timer migration documented above.

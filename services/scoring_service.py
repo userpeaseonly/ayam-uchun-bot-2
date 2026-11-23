@@ -67,6 +67,9 @@ async def run_test_analytics_and_scoring(test_id: int, *, finish=False, owner_id
     from scripts.database.db import get_db_connection
     from services.platform_service import PlatformError, one, rows, require_owner
 
+    if finish:
+        from services.timer_service import settle_test_deadlines
+        await settle_test_deadlines(test_id, owner_id)
     async with get_db_connection() as db:
         await db.execute("BEGIN IMMEDIATE")
         test = await one(db, "SELECT * FROM tests WHERE id = ?", (test_id,))
@@ -74,6 +77,10 @@ async def run_test_analytics_and_scoring(test_id: int, *, finish=False, owner_id
             raise PlatformError("Test topilmadi.", 404)
         if owner_id is not None:
             require_owner(test, owner_id)
+        if finish and await one(db, """SELECT a.user_id FROM timed_attempts a LEFT JOIN submissions s
+                ON s.test_id = a.test_id AND s.user_id = a.user_id
+                WHERE a.test_id = ? AND a.deadline_at IS NOT NULL AND s.id IS NULL LIMIT 1""", (test_id,)):
+            raise PlatformError("O‘quvchilar testni ishlamoqda. Ular topshirishini yoki vaqt tugashini kuting.", 409)
         questions = await rows(db, "SELECT * FROM questions WHERE test_id = ? ORDER BY question_num", (test_id,))
         submissions = await rows(db, "SELECT * FROM submissions WHERE test_id = ? ORDER BY submitted_at, id", (test_id,))
         all_answers = await rows(db, "SELECT a.* FROM answers a JOIN submissions s ON s.id = a.submission_id WHERE s.test_id = ?", (test_id,))

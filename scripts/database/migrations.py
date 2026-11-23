@@ -81,6 +81,18 @@ MIGRATIONS = [
             PRIMARY KEY(owner_id, request_key)
         )""",
     ],
+    [
+        "ALTER TABLE imports ADD COLUMN duration_minutes INTEGER CHECK(duration_minutes BETWEEN 1 AND 1440)",
+        "ALTER TABLE tests ADD COLUMN duration_minutes INTEGER CHECK(duration_minutes BETWEEN 1 AND 1440)",
+        "ALTER TABLE submissions ADD COLUMN auto_submitted INTEGER NOT NULL DEFAULT 0",
+        """CREATE TABLE timed_attempts (
+            test_id INTEGER NOT NULL REFERENCES tests(id), user_id INTEGER NOT NULL,
+            started_at REAL NOT NULL, deadline_at REAL,
+            first_name TEXT, last_name TEXT, username TEXT,
+            PRIMARY KEY(test_id, user_id)
+        )""",
+        "CREATE INDEX idx_attempt_deadline ON timed_attempts(deadline_at)",
+    ],
 ]
 
 

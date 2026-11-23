@@ -132,7 +132,7 @@ async def import_detail(request):
     if request.method == "GET":
         return web.json_response(await platform.get_import(import_id, owner))
     data = await body(request)
-    revision = await platform.save_import(import_id, owner, data["document"], data["revision"], data.get("visibility"), data.get("subject"))
+    revision = await platform.save_import(import_id, owner, data["document"], data["revision"], data.get("visibility"), data.get("subject"), data.get("duration_minutes", platform.UNSET))
     return web.json_response({"revision": revision})
 
 
@@ -160,6 +160,13 @@ async def student_test(request):
 async def student_action(request):
     test = await platform.load_test(request.match_info["code"])
     action = request.match_info["action"]
+    if action == "timer" and request.method == "GET":
+        from services.timer_service import attempt_status
+        return web.json_response(await attempt_status(test["id"], user(request)["id"]))
+    if action == "start" and request.method == "POST":
+        from services.timer_service import start_attempt
+        await start_attempt(test["id"], user(request))
+        return web.json_response(await platform.test_for_student(test["public_id"], user(request)["id"]))
     if action == "result" and request.method == "GET":
         return web.json_response(await platform.submission_result(test["id"], user(request)["id"]))
     if request.method != "POST":
@@ -196,7 +203,7 @@ async def test_action(request):
         return web.json_response({"test_id": created}, status=201)
     if action == "listing":
         data = await body(request)
-        await catalog.update_listing(test_id, owner, data.get("visibility"), data.get("subject", ""))
+        await catalog.update_listing(test_id, owner, data.get("visibility"), data.get("subject", ""), data.get("duration_minutes", platform.UNSET))
     elif action == "finish":
         from services.scoring_service import run_test_analytics_and_scoring
         await run_test_analytics_and_scoring(test_id, finish=True, owner_id=owner)
@@ -241,10 +248,12 @@ async def asset(request):
                     if referenced:
                         try:
                             await access_policy.require_access(db, test, user(request)["id"])
+                            from services.timer_service import require_started
+                            await require_started(db, test, user(request)["id"])
                             allowed = True
                             break
                         except platform.PlatformError as error:
-                            if error.status != 403:
+                            if error.status not in (403, 409):
                                 raise
             if not allowed:
                 raise web.HTTPNotFound()

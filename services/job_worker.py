@@ -22,11 +22,11 @@ async def recover_jobs():
         await db.commit()
 
 
-async def claim_job(*, imports=False):
+async def claim_job(*, imports=False, timers=False):
     async with get_db_connection() as db:
         await db.execute("BEGIN IMMEDIATE")
         job = await one(db, "SELECT * FROM jobs WHERE status = 'queued' AND available_at <= ? AND "
-                            + ("kind = 'import'" if imports else "kind != 'import'") + " ORDER BY id LIMIT 1", (time.time(),))
+                            + ("kind = 'import'" if imports else "kind = 'expire'" if timers else "kind NOT IN ('import', 'expire')") + " ORDER BY id LIMIT 1", (time.time(),))
         if job:
             await db.execute("UPDATE jobs SET status = 'running', attempts = attempts + 1 WHERE id = ?", (job["id"],))
             job["attempts"] += 1
@@ -101,6 +101,16 @@ async def execute_job(job, bot=None):
     try:
         if job["kind"] == "import":
             await process_import(job["target"])
+        elif job["kind"] == "expire":
+            from services.timer_service import expire_attempt
+            test_id, user_id = map(int, job["target"].split(":"))
+            retry_at = await expire_attempt(test_id, user_id)
+            if retry_at is not None:
+                # Clock adjustment between claiming and executing must not lose expiry.
+                async with get_db_connection() as db:
+                    await db.execute("UPDATE jobs SET status = 'queued', available_at = ? WHERE id = ?", (retry_at, job["id"]))
+                    await db.commit()
+                return
         elif job["kind"] == "grade":
             await grade_answer(int(job["target"]))
         elif job["kind"] == "notify":
@@ -132,10 +142,10 @@ async def execute_job(job, bot=None):
             await db.commit()
 
 
-async def worker_loop(bot=None, *, imports=False):
+async def worker_loop(bot=None, *, imports=False, timers=False):
     while True:
         try:
-            job = await claim_job(imports=imports)
+            job = await claim_job(imports=imports, timers=timers)
             if job:
                 await execute_job(job, bot)
             else:

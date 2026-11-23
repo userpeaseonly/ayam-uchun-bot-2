@@ -6,22 +6,23 @@ from urllib.parse import urlencode, urlsplit, urlunsplit, parse_qsl
 
 import config
 from scripts.database.db import get_db_connection
-from services.platform_service import PlatformError, one, rows, require_owner
+from services.platform_service import PlatformError, one, rows, require_owner, UNSET
 from services.test_document import TestDocument
 
 
 SUMMARY_SQL = """SELECT t.id, t.public_id, t.code, t.title, t.status,
     t.total_questions, t.open_questions_count, t.visibility, t.subject,
-    t.created_at, t.finished_at, t.template_id,
+    t.created_at, t.finished_at, t.template_id, t.duration_minutes,
     COALESCE(NULLIF(p.full_name, ''), NULLIF(t.publisher_name, ''), 'Ism hali kiritilmagan') AS publisher_name,
     COALESCE(tt.price_uzs, 5000) AS standard_price_uzs,
-    s.id AS submission_id, d.revision AS draft_revision,
+    s.id AS submission_id, COALESCE(d.revision, CASE WHEN ta.user_id IS NOT NULL THEN 0 END) AS draft_revision,
     CASE WHEN t.status = 'finished' THEN s.total_score END AS score,
     CASE WHEN t.status = 'finished' THEN s.rank END AS rank
     FROM tests t LEFT JOIN profiles p ON p.user_id = t.created_by
     LEFT JOIN test_templates tt ON tt.id = t.template_id
     LEFT JOIN submissions s ON s.test_id = t.id AND s.user_id = ?
-    LEFT JOIN answer_drafts d ON d.test_id = t.id AND d.user_id = ? """
+    LEFT JOIN answer_drafts d ON d.test_id = t.id AND d.user_id = ?
+    LEFT JOIN timed_attempts ta ON ta.test_id = t.id AND ta.user_id = ? """
 
 
 def publication_metadata(visibility, subject):
@@ -68,7 +69,7 @@ def share_url(test, bot_username=None):
 
 async def summary(test_id, user_id):
     async with get_db_connection() as db:
-        result = await one(db, SUMMARY_SQL + " WHERE t.id = ?", (user_id, user_id, test_id))
+        result = await one(db, SUMMARY_SQL + " WHERE t.id = ?", (user_id, user_id, user_id, test_id))
     if not result:
         raise PlatformError("Test topilmadi.", 404)
     return result
@@ -77,11 +78,11 @@ async def summary(test_id, user_id):
 async def list_tests(user_id, *, scope="public", query="", subject="", before=None):
     query, subject = query.strip()[:150], subject.strip()[:80]
     conditions = ["t.document_json IS NOT NULL", "t.status IN ('active', 'finished')"]
-    args = [user_id, user_id]
+    args = [user_id, user_id, user_id]
     if scope == "public":
         conditions += ["t.visibility = 'public'", "t.status = 'active'", "COALESCE(p.full_name, t.publisher_name) != ''"]
     elif scope == "drafts":
-        conditions += ["d.user_id IS NOT NULL", "s.id IS NULL"]
+        conditions += ["(d.user_id IS NOT NULL OR ta.user_id IS NOT NULL)", "s.id IS NULL"]
     elif scope == "results":
         conditions += ["s.id IS NOT NULL"]
     elif scope == "teacher":
@@ -112,16 +113,16 @@ async def list_tests(user_id, *, scope="public", query="", subject="", before=No
             "subjects": [item["subject"] for item in subjects], **({"counts": counts} if counts is not None else {})}
 
 
-async def create_session(db, owner_id, template, name, visibility, subject):
+async def create_session(db, owner_id, template, name, visibility, subject, duration_minutes=None):
     code = "T-" + str(secrets.randbelow(900000) + 100000)
     while await one(db, "SELECT id FROM tests WHERE code = ?", (code,)):
         code = "T-" + str(secrets.randbelow(900000) + 100000)
     document = TestDocument.model_validate_json(template["document_json"])
     cursor = await db.execute("""INSERT INTO tests(code, title, created_by, total_questions, open_questions_count,
-        document_json, source_import_id, template_id, public_id, visibility, subject, publisher_name)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        document_json, source_import_id, template_id, public_id, visibility, subject, publisher_name, duration_minutes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (code, document.title, owner_id, len(document.questions), sum(q.kind == "open" for q in document.questions),
-         template["document_json"], template["source_import_id"], template["id"], uuid.uuid4().hex, visibility, subject, name))
+         template["document_json"], template["source_import_id"], template["id"], uuid.uuid4().hex, visibility, subject, name, duration_minutes))
     test_id = cursor.lastrowid
     await db.executemany("INSERT INTO questions(test_id, question_num, question_type, correct_answer, ai_instructions, assigned_points, content_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
         [(test_id, q.number, "open" if q.kind == "open" else "closed", q.answer or None, q.rubric,
@@ -144,13 +145,13 @@ async def new_session(test_id, owner_id, request_key):
         prior = await one(db, "SELECT test_id FROM session_requests WHERE owner_id = ? AND request_key = ?", (owner_id, request_key))
         if prior:
             return prior["test_id"]
-        created = await create_session(db, owner_id, template, name, source["visibility"], source["subject"])
+        created = await create_session(db, owner_id, template, name, source["visibility"], source["subject"], source["duration_minutes"])
         await db.execute("INSERT INTO session_requests VALUES (?, ?, ?)", (owner_id, request_key, created))
         await db.commit()
     return created
 
 
-async def update_listing(test_id, owner_id, visibility, subject):
+async def update_listing(test_id, owner_id, visibility, subject, duration_minutes=UNSET):
     visibility, subject = publication_metadata(visibility, subject)
     async with get_db_connection() as db:
         await db.execute("BEGIN IMMEDIATE")
@@ -159,5 +160,13 @@ async def update_listing(test_id, owner_id, visibility, subject):
         name = await publisher_name(db, owner_id)
         if not test["document_json"]:
             raise PlatformError("Avval savol matnlari yuklangan test yarating.", 409)
-        await db.execute("UPDATE tests SET visibility = ?, subject = ?, publisher_name = ? WHERE id = ?", (visibility, subject, name, test_id))
+        from services.timer_service import validate_duration
+        duration = validate_duration(test["duration_minutes"] if duration_minutes is UNSET else duration_minutes)
+        if duration != test["duration_minutes"]:
+            started = await one(db, "SELECT user_id FROM timed_attempts WHERE test_id = ? LIMIT 1", (test_id,))
+            started = started or await one(db, "SELECT user_id FROM answer_drafts WHERE test_id = ? LIMIT 1", (test_id,))
+            started = started or await one(db, "SELECT user_id FROM submissions WHERE test_id = ? LIMIT 1", (test_id,))
+            if test["status"] != "active" or started:
+                raise PlatformError("O‘quvchilar boshlagach vaqt chegarasini o‘zgartirib bo‘lmaydi. Yangi sessiya oching.", 409)
+        await db.execute("UPDATE tests SET visibility = ?, subject = ?, publisher_name = ?, duration_minutes = ? WHERE id = ?", (visibility, subject, name, duration, test_id))
         await db.commit()
