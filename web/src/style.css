@@ -204,3 +204,61 @@ h1 { overflow-wrap: anywhere; }
   .brand-illustration { top: 21px; right: -35px; }
   .role-switch button:not(.selected) { color: #805c72; }
 }
+
+/* Public discovery and publisher identity share the existing Basirat system. */
+.publisher-profile { margin-bottom: 24px; }
+.publisher-profile summary { display: flex; justify-content: space-between; cursor: pointer; gap: 16px; align-items: center; font-weight: 650; }
+.publisher-profile summary span { display: flex; align-items: center; gap: 10px; }
+.publisher-profile form { display: flex; align-items: end; gap: 14px; flex-wrap: wrap; }
+.publisher-profile .field { flex: 1 1 240px; margin: 0; }
+.publisher-profile p { color: var(--muted); }
+.publication-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 20px 0; }
+.publication-fields .field { margin: 0; }
+.publication-fields .field-hint { grid-column: 1 / -1; margin: 0; }
+.catalog-welcome { margin-bottom: 28px; }
+.catalog-tabs { margin-bottom: 22px; overflow-x: auto; overflow-y: hidden; padding-bottom: 2px; }
+.catalog-tabs button { white-space: nowrap; }
+.catalog-toolbar { display: flex; align-items: end; gap: 12px; margin-bottom: 24px; }
+.catalog-toolbar .search-field { flex: 1; min-width: 0; }
+.catalog-toolbar .search-field input { width: 100%; }
+.catalog-subject { display: grid; gap: 5px; font-size: 12px; color: var(--muted); }
+.catalog-subject select { min-width: 150px; }
+.catalog-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+button.catalog-card { display: block; text-align: left; width: 100%; color: inherit; background: white; font-weight: 400; padding: 24px; border: 1px solid #eadfe5; border-radius: 20px; min-width: 0; transition: border-color .15s, box-shadow .15s; }
+button.catalog-card:hover { border-color: #ae7b99; box-shadow: 0 8px 25px #571f3f0a; transform: none; }
+.catalog-card h2 { margin: 20px 0 14px; font-size: 22px; line-height: 1.35; overflow-wrap: anywhere; }
+.catalog-subject-tag { font-size: 12px; padding: 5px 9px; border-radius: 7px; background: #f6edf2; color: #571f3f; overflow-wrap: anywhere; }
+.publisher-name { display: flex; align-items: center; gap: 9px; color: #571f3f; font-size: 15px; overflow-wrap: anywhere; }
+.publisher-name svg { flex-shrink: 0; }
+.catalog-meta { display: flex; flex-wrap: wrap; gap: 8px 16px; color: #7a6973; font-size: 12px; margin: 15px 0; }
+.catalog-card-bottom { display: flex; align-items: center; justify-content: space-between; gap: 8px; border-top: 1px solid #f0e7ec; padding-top: 16px; color: #571f3f; font-weight: 600; font-size: 13px; }
+.catalog-more { display: flex; justify-content: center; margin: 24px 0; }
+.catalog-note { display: flex; gap: 9px; align-items: center; color: #7a6973; margin-top: 28px; font-size: 12px; }
+.catalog-note svg { flex-shrink: 0; }
+.test-introduction { max-width: 780px; margin: 20px auto; }
+.test-introduction h1 { margin-top: 24px; overflow-wrap: anywhere; }
+.test-introduction .publisher-name { font-size: 18px; }
+.intro-facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; background: #faf5f8; border-radius: 14px; padding: 22px 12px; margin: 26px 0; }
+.intro-facts div { display: grid; gap: 5px; text-align: center; }
+.intro-facts strong { color: #571f3f; font-size: 25px; }
+.intro-facts span { color: #7a6973; font-size: 12px; }
+.intro-rules { color: #64535e; padding-left: 22px; line-height: 1.7; margin-bottom: 28px; }
+.intro-rules li { margin-bottom: 12px; padding-left: 6px; }
+.share-panel { margin-bottom: 24px; }
+.share-panel hr { border: 0; border-top: 1px solid #eadfe5; margin: 24px 0; }
+.share-panel .actions { flex-wrap: wrap; }
+@media (max-width: 650px) {
+  .catalog-grid, .publication-fields { grid-template-columns: minmax(0, 1fr); }
+  .catalog-toolbar { flex-wrap: wrap; }
+  .catalog-toolbar .search-field { flex-basis: 100%; }
+  .catalog-subject { flex: 1; }
+  .catalog-welcome .brand-illustration { display: none; }
+  button.catalog-card { padding: 20px; }
+  .catalog-tabs { gap: 0; }
+  .catalog-tabs button { font-size: 12px; padding-left: 11px; padding-right: 11px; }
+  .intro-facts { gap: 8px; padding: 20px 8px; }
+  .intro-facts strong { font-size: 21px; }
+  .publisher-profile, .test-introduction { padding: 20px; }
+  .share-panel .actions > * { width: 100%; }
+}
+button.catalog-card:active:not(:disabled) { background: #fbf5f8; color: inherit; }

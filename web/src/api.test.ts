@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { api, answered, questionAnswered, linkedImport } from './api';
+import { api, answered, questionAnswered, linkedImport, linkedTest } from './api';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -37,5 +37,22 @@ describe('Telegram import links', () => {
     expect(linkedImport('?import=' + 'a'.repeat(32))).toBe('a'.repeat(32));
     expect(linkedImport('?import=../../other-user')).toBeNull();
     expect(linkedImport('?test=T-1234')).toBeNull();
+  });
+});
+
+
+describe('session share links', () => {
+  it('accepts opaque identifiers and Telegram start parameters', () => {
+    const id = 'ab'.repeat(16);
+    expect(linkedTest('?test=' + id)).toBe(id);
+    expect(linkedTest('', 't_' + id)).toBe(id);
+    expect(linkedTest('?test=' + id, 'T-1234')).toBe(id);
+  });
+  it('keeps legacy links working and rejects paths or arbitrary payloads', () => {
+    expect(linkedTest('?test=123456')).toBe('T-123456');
+    expect(linkedTest('?test=t-1234')).toBe('T-1234');
+    expect(linkedTest('?test=../../admin')).toBeNull();
+    expect(linkedTest('', 'import')).toBeNull();
+    expect(linkedTest('', 't_' + 'a'.repeat(31))).toBeNull();
   });
 });

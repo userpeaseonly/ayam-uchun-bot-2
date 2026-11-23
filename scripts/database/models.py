@@ -12,8 +12,8 @@ async def create_test(
     async with get_db_connection() as db:
         cursor = await db.execute(
             """
-            INSERT INTO tests (code, title, created_by, total_questions, open_questions_count, status)
-            VALUES (?, ?, ?, ?, ?, 'active')
+            INSERT INTO tests (code, title, created_by, total_questions, open_questions_count, status, public_id)
+            VALUES (?, ?, ?, ?, ?, 'active', lower(hex(randomblob(16))))
             """,
             (code.upper(), title, created_by, total_questions, open_questions_count),
         )
@@ -232,4 +232,3 @@ async def batch_update_answer_points(updates: List[Tuple[float, int]]):
             updates,
         )
         await db.commit()
-

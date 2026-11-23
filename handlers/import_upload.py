@@ -22,12 +22,12 @@ logger = logging.getLogger(__name__)
 
 
 def can_upload(message):
-    return message.from_user and message.from_user.id in config.ADMIN_IDS and message.chat.type == "private"
+    return message.from_user and not getattr(message.from_user, "is_bot", False) and message.chat.type == "private"
 
 
 async def prompt_import(message: Message, state: FSMContext):
     if not can_upload(message):
-        await message.answer("Test fayllarini faqat o'qituvchi botning shaxsiy chatiga yuborishi mumkin.")
+        await message.answer("Test fayllarini botning shaxsiy chatiga yuboring.")
         return
     await state.clear()
     await message.answer(
@@ -59,7 +59,7 @@ async def receive_upload(message: Message, bot: Bot, state: FSMContext | None = 
     if document and (document.file_name or "").lower().endswith((".xlsx", ".xls")):
         raise SkipHandler()  # Preserve the existing Excel creation flow.
     if not can_upload(message):
-        await message.answer("Test fayllarini faqat o'qituvchi botning shaxsiy chatiga yuborishi mumkin.")
+        await message.answer("Test fayllarini botning shaxsiy chatiga yuboring.")
         return
     if document and not (
         (document.file_name or "").lower().endswith((".pdf", ".jpg", ".jpeg", ".png", ".webp"))
@@ -123,7 +123,7 @@ async def cmd_done(message: Message):
 
 @router.callback_query(F.data.startswith("start_import:"))
 async def cb_start_import(callback: CallbackQuery):
-    if callback.from_user.id not in config.ADMIN_IDS or not callback.message or callback.message.chat.type != "private":
+    if not callback.message or callback.message.chat.type != "private":
         await callback.answer("Ruxsat yo'q.", show_alert=True)
         return
     # Acknowledge before waiting for an in-flight album download.

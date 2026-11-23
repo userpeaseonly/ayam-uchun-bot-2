@@ -17,12 +17,26 @@ async def cmd_start(message: Message, state: FSMContext):
         await prompt_import(message, state)
         return
     await state.clear()
+    argument = (message.text or "").split(maxsplit=1)
+    if len(argument) == 2 and argument[1].startswith("t_"):
+        from services.platform_service import load_test, PlatformError
+        try:
+            test = await load_test(argument[1][2:])
+            if not test["document_json"]:
+                from handlers.student import process_test_code_input
+                await process_test_code_input(message, test["code"], state)
+                return
+            await message.answer(f"<b>{escape(test['title'])}</b>\nTestni ochish uchun tugmani bosing.",
+                                 parse_mode="HTML", reply_markup=get_mini_app_keyboard(test["public_id"]))
+        except PlatformError:
+            await message.answer("Test topilmadi. Havolani tekshiring.")
+        return
     text = (
         f"Assalomu alaykum, <b>{escape(message.from_user.first_name)}</b>!\n\n"
-        "<b>Basirat ta’lim markaziga xush kelibsiz.</b>\n"
+        "<b>Basirat testlar platformasiga xush kelibsiz.</b>\n"
         "Bilimingizni sinang va natijangizni kuzating.\n\n"
         "Boshlash uchun quyidagi <b>📚 Basirat testlari</b> tugmasini bosing. "
-        "Ilovada o‘qituvchingiz bergan test kodini kiriting va savollarga javob bering.\n\n"
+        "Katalogdan test tanlang yoki o‘qituvchi ulashgan havolani oching.\n\n"
         "O‘qituvchilar shu ilovada test tayyorlashi, javoblarni tekshirishi va hisobot olishi mumkin."
     ) if config.MINI_APP_URL else (
         f"Assalomu alaykum, <b>{escape(message.from_user.first_name)}</b>!\n\n"
@@ -48,7 +62,7 @@ async def cmd_help(message: Message):
             "<b>Basirat · Foydalanish qo‘llanmasi</b>\n\n"
             "<b>O‘quvchilar uchun</b>\n"
             "1. <b>📚 Basirat testlari</b> tugmasini yoki bot menyusidagi <b>Testlar</b> tugmasini bosing.\n"
-            "2. O‘qituvchingiz bergan test kodini kiriting.\n"
+            "2. Katalogdan test tanlang yoki o‘qituvchi havolasini oching.\n"
             "3. Variantni tanlang yoki ochiq javobingizni yozing. Javoblar avtomatik saqlanadi.\n"
             "4. <b>Javoblarim</b> bo‘limida tekshirib, <b>Tasdiqlash va topshirish</b> tugmasini bosing.\n\n"
             "To‘g‘ri va noto‘g‘ri javoblar topshirgach ko‘rinadi. Ochiq javoblar tekshirilishi kutilishi mumkin. "

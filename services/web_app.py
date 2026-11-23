@@ -11,6 +11,8 @@ from pydantic import ValidationError
 import config
 from scripts.database.db import get_db_connection
 from services import platform_service as platform
+from services import catalog_service as catalog
+from services import access_policy
 from services.import_service import media_file
 from services.upload_service import store_source, start_collection
 from services.telegram_auth import verify_init_data, make_session, read_session
@@ -31,8 +33,6 @@ async def security(request, handler):
                     raise platform.PlatformError("Noto'g'ri so'rov manbasi.", 403)
             if request.path != "/api/session":
                 request[USER_KEY] = read_session(request.cookies.get("ayam_session", ""))
-                if request.path.startswith("/api/admin/") and request[USER_KEY]["id"] not in config.ADMIN_IDS:
-                    raise platform.PlatformError("Faqat o'qituvchilar uchun.", 403)
         response = await handler(request)
     except platform.PlatformError as error:
         response = web.json_response({"error": str(error)}, status=error.status)
@@ -68,19 +68,20 @@ async def body(request):
 async def session(request):
     data = await body(request)
     identity = verify_init_data(data.get("init_data"))
-    response = web.json_response(identity_payload(request, identity))
+    response = web.json_response(await identity_payload(request, identity))
     response.set_cookie("ayam_session", make_session(identity), httponly=True,
                         secure=config.MINI_APP_URL.startswith("https://"), samesite="Strict", max_age=12 * 3600, path="/")
     return response
 
 
 async def me(request):
-    return web.json_response(identity_payload(request, user(request)))
+    return web.json_response(await identity_payload(request, user(request)))
 
 
-def identity_payload(request, identity):
+async def identity_payload(request, identity):
     username = request.app.get(BOT_USERNAME_KEY)
-    return {"user": identity, "is_admin": identity["id"] in config.ADMIN_IDS,
+    return {"user": identity, "is_admin": identity["id"] in config.ADMIN_IDS, "can_teach": True,
+            "profile": await catalog.profile(identity["id"]),
             "bot_import_url": f"https://t.me/{username}?start=import" if username else None}
 
 
@@ -131,7 +132,7 @@ async def import_detail(request):
     if request.method == "GET":
         return web.json_response(await platform.get_import(import_id, owner))
     data = await body(request)
-    revision = await platform.save_import(import_id, owner, data["document"], data["revision"])
+    revision = await platform.save_import(import_id, owner, data["document"], data["revision"], data.get("visibility"), data.get("subject"))
     return web.json_response({"revision": revision})
 
 
@@ -174,19 +175,29 @@ async def student_action(request):
 
 
 async def admin_tests(request):
-    async with get_db_connection() as db:
-        tests = await platform.rows(db, "SELECT id, code, title, status, total_questions FROM tests WHERE created_by = ? ORDER BY id DESC LIMIT 100", (user(request)["id"],))
-    return web.json_response(tests)
+    page = await catalog.list_tests(user(request)["id"], scope="teacher", query=request.query.get("q", ""),
+                                    before=int(request.query["before"]) if "before" in request.query else None)
+    decorate(request, page["items"])
+    return web.json_response(page["items"] if request.path.startswith("/api/admin/") else page)
 
 
 async def results(request):
-    return web.json_response(await platform.teacher_results(int(request.match_info["test_id"]), user(request)["id"]))
+    result = await platform.teacher_results(int(request.match_info["test_id"]), user(request)["id"])
+    decorate(request, [result["test"]])
+    return web.json_response(result)
 
 
 async def test_action(request):
     test_id, owner = int(request.match_info["test_id"]), user(request)["id"]
     action = request.match_info["action"]
-    if action == "finish":
+    if action == "session":
+        data = await body(request)
+        created = await catalog.new_session(test_id, owner, data.get("request_key"))
+        return web.json_response({"test_id": created}, status=201)
+    if action == "listing":
+        data = await body(request)
+        await catalog.update_listing(test_id, owner, data.get("visibility"), data.get("subject", ""))
+    elif action == "finish":
         from services.scoring_service import run_test_analytics_and_scoring
         await run_test_analytics_and_scoring(test_id, finish=True, owner_id=owner)
     elif action == "retry-grading":
@@ -221,14 +232,53 @@ async def asset(request):
             raise web.HTTPNotFound()
         if record["owner_id"] != user(request)["id"]:
             # Only approved crops referenced by the immutable published document are student-visible.
-            test = await platform.one(db, "SELECT document_json FROM tests WHERE source_import_id = ? AND status IN ('active', 'finished')", (record["import_id"],))
+            tests = await platform.rows(db, "SELECT * FROM tests WHERE source_import_id = ? AND status IN ('active', 'finished')", (record["import_id"],))
             allowed = False
-            if record["kind"] == "crop" and test:
-                document = json.loads(test["document_json"])
-                allowed = any(region.get("asset_id") == record["id"] for item in [*document["passages"], *document["questions"]] for region in item.get("media", []))
+            if record["kind"] == "crop":
+                for test in tests:
+                    document = json.loads(test["document_json"])
+                    referenced = any(region.get("asset_id") == record["id"] for item in [*document["passages"], *document["questions"]] for region in item.get("media", []))
+                    if referenced:
+                        try:
+                            await access_policy.require_access(db, test, user(request)["id"])
+                            allowed = True
+                            break
+                        except platform.PlatformError as error:
+                            if error.status != 403:
+                                raise
             if not allowed:
                 raise web.HTTPNotFound()
     return web.FileResponse(media_file(record["filename"]), headers={"Content-Type": record["mime"]})
+
+
+def decorate(request, records):
+    for record in records:
+        record["share_url"] = catalog.share_url(record, request.app.get(BOT_USERNAME_KEY))
+
+
+async def publisher_profile(request):
+    data = await body(request)
+    return web.json_response(await catalog.save_profile(user(request)["id"], data.get("full_name")))
+
+
+async def discover(request):
+    scope = request.query.get("scope", "public")
+    if scope not in ("public", "drafts", "results"):
+        raise platform.PlatformError("Noma’lum bo‘lim.")
+    page = await catalog.list_tests(user(request)["id"], scope=scope, query=request.query.get("q", ""),
+        subject=request.query.get("subject", ""), before=int(request.query["before"]) if "before" in request.query else None)
+    decorate(request, page["items"])
+    return web.json_response(page)
+
+
+async def introduction(request):
+    test = await platform.load_test(request.match_info["code"])
+    if not test["document_json"] or test["status"] not in ("active", "finished"):
+        raise platform.PlatformError("Test topilmadi.", 404)
+    result = await catalog.summary(test["id"], user(request)["id"])
+    result["access"] = access_policy.access_details(test, user(request)["id"])
+    decorate(request, [result])
+    return web.json_response(result)
 
 
 async def index(request):
@@ -246,6 +296,8 @@ def create_web_app():
     app = web.Application(middlewares=[security], client_max_size=config.MAX_UPLOAD_BYTES + 1024 * 1024)
     app.add_routes([
         web.post("/api/session", session), web.get("/api/me", me),
+        web.put("/api/profile", publisher_profile), web.get("/api/catalog", discover),
+        web.get("/api/tests/{code}/intro", introduction),
         web.get("/api/admin/imports", imports), web.post("/api/admin/imports", imports),
         web.get("/api/admin/imports/{import_id}", import_detail), web.put("/api/admin/imports/{import_id}", import_detail),
         web.post("/api/admin/imports/{import_id}/{action}", import_action),
@@ -256,6 +308,17 @@ def create_web_app():
         web.get("/api/tests/{code}", student_test),
         web.get("/api/tests/{code}/{action}", student_action), web.post("/api/tests/{code}/{action}", student_action),
         web.get("/api/assets/{asset_id}", asset),
-        web.get("/{path:.*}", index),
     ])
+    # Preserve existing deep links/clients while all teacher operations enforce owner ID.
+    teacher_routes = [
+        web.get("/api/teacher/imports", imports), web.post("/api/teacher/imports", imports),
+        web.get("/api/teacher/imports/{import_id}", import_detail), web.put("/api/teacher/imports/{import_id}", import_detail),
+        web.post("/api/teacher/imports/{import_id}/{action}", import_action),
+        web.get("/api/teacher/tests", admin_tests), web.get("/api/teacher/tests/{test_id}/results", results),
+        web.get("/api/teacher/tests/{test_id}/report", report),
+        web.post("/api/teacher/tests/{test_id}/answers/{answer_id}", override),
+        web.post("/api/teacher/tests/{test_id}/{action}", test_action),
+    ]
+    app.add_routes(teacher_routes)
+    app.router.add_get("/{path:.*}", index)
     return app

@@ -36,3 +36,12 @@ export function linkedImport(search: string): string | null {
   const id = new URLSearchParams(search).get('import');
   return id && /^[a-f0-9]{32}$/.test(id) ? id : null;
 }
+
+// Keep old teacher links working; all new links use opaque session identifiers.
+export function linkedTest(search: string, startParam?: string): string | null {
+  const raw = new URLSearchParams(search).get('test') || startParam || '';
+  const value = raw.replace(/^t_/, '');
+  if (/^[a-f0-9]{32}$/i.test(value)) return value.toLowerCase();
+  if (/^(T-)?\d{4,6}$/i.test(value)) return value.toUpperCase().replace(/^(\d{4,6})$/, 'T-$1');
+  return null;
+}

@@ -3,13 +3,15 @@ import config
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 
-def get_mini_app_keyboard(code="", *, import_id=""):
+def get_mini_app_keyboard(code="", *, import_id="", teacher=False):
     if not config.MINI_APP_URL:
         return None
     url = urlsplit(config.MINI_APP_URL)
     query = dict(parse_qsl(url.query))
     if code:
         query["test"] = code
+    if teacher:
+        query["view"] = "teacher"
     if import_id:
         query["import"] = import_id
     target = urlunsplit(url._replace(query=urlencode(query)))

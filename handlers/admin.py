@@ -45,6 +45,10 @@ def generate_test_code() -> str:
 @router.message(F.text == "➕ Yangi test yaratish")
 @router.message(Command("newtest"))
 async def cmd_new_test_prompt(message: Message, state: FSMContext):
+    if get_mini_app_keyboard():
+        from handlers.import_upload import prompt_import
+        await prompt_import(message, state)
+        return
     if not is_admin(message.from_user.id):
         await message.answer("Sizda admin huquqi mavjud emas!")
         return
@@ -200,6 +204,9 @@ async def process_admin_test_text(message: Message, text: str, state: FSMContext
 @router.message(F.text == "📊 Testlar boshqaruvi")
 @router.message(Command("tests"))
 async def cmd_list_tests(message: Message):
+    if get_mini_app_keyboard():
+        await message.answer("Testlaringiz va natijalaringizni ilovadagi O‘qituvchi bo‘limida boshqaring.", reply_markup=get_mini_app_keyboard(teacher=True))
+        return
     if not is_admin(message.from_user.id):
         return
 

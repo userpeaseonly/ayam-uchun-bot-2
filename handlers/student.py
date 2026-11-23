@@ -38,6 +38,10 @@ async def cmd_join_test(message: Message, state: FSMContext):
             await process_test_code_input(message, code, state)
             return
 
+    if get_mini_app_keyboard():
+        await message.answer("Katalogdan test tanlang yoki o‘qituvchi havolasini oching.", reply_markup=get_mini_app_keyboard())
+        return
+
     await state.set_state(StudentStates.waiting_for_test_code)
     await message.answer(
         "✍️ <b>Test topshirish:</b>\n\n"

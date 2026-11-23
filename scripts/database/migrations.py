@@ -49,6 +49,38 @@ MIGRATIONS = [
             import_id TEXT NOT NULL UNIQUE REFERENCES imports(id)
         )""",
     ],
+    [
+        """CREATE TABLE profiles (
+            user_id INTEGER PRIMARY KEY, full_name TEXT NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )""",
+        """CREATE TABLE test_templates (
+            id INTEGER PRIMARY KEY, owner_id INTEGER NOT NULL,
+            title TEXT NOT NULL, document_json TEXT NOT NULL,
+            source_import_id TEXT, price_uzs INTEGER NOT NULL DEFAULT 5000 CHECK(price_uzs >= 0),
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )""",
+        "ALTER TABLE tests ADD COLUMN template_id INTEGER REFERENCES test_templates(id)",
+        "ALTER TABLE tests ADD COLUMN public_id TEXT",
+        "ALTER TABLE tests ADD COLUMN visibility TEXT NOT NULL DEFAULT 'unlisted' CHECK(visibility IN ('public', 'unlisted'))",
+        "ALTER TABLE tests ADD COLUMN subject TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE tests ADD COLUMN publisher_name TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE imports ADD COLUMN visibility TEXT NOT NULL DEFAULT 'public' CHECK(visibility IN ('public', 'unlisted'))",
+        "ALTER TABLE imports ADD COLUMN subject TEXT NOT NULL DEFAULT ''",
+        "INSERT INTO test_templates(id, owner_id, title, document_json, source_import_id) SELECT id, created_by, title, document_json, source_import_id FROM tests WHERE document_json IS NOT NULL",
+        "UPDATE tests SET template_id = id WHERE document_json IS NOT NULL",
+        "UPDATE tests SET public_id = lower(hex(randomblob(16)))",
+        "CREATE UNIQUE INDEX idx_test_public_id ON tests(public_id)",
+        "CREATE INDEX idx_test_catalog ON tests(visibility, status, id)",
+        "CREATE INDEX idx_test_owner ON tests(created_by, id)",
+        "CREATE INDEX idx_submissions_user ON submissions(user_id, test_id)",
+        "CREATE INDEX idx_drafts_user ON answer_drafts(user_id, test_id)",
+        """CREATE TABLE session_requests (
+            owner_id INTEGER NOT NULL, request_key TEXT NOT NULL,
+            test_id INTEGER NOT NULL REFERENCES tests(id),
+            PRIMARY KEY(owner_id, request_key)
+        )""",
+    ],
 ]
 
 

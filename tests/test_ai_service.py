@@ -18,7 +18,10 @@ async def test_ai_service_empty_answer():
 
 
 @pytest.mark.asyncio
-async def test_ai_service_deepseek_mock():
+async def test_ai_service_deepseek_mock(monkeypatch):
+    # The mocked provider must not depend on credentials from a developer's .env.
+    import config
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "fake-unit-test-key")
     ai = AIService()
     ai.provider = "deepseek"
     ai._call_deepseek = AsyncMock(

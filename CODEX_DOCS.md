@@ -326,3 +326,66 @@ Multipart policy: all required subparts must match the approved whole-question
 rubric to earn the parent’s fixed points. There is no partial credit. Separate
 answer-key PDF extraction is not implemented; bulk paste and manual key/rubric
 entry are supported. UI styling can be improved independently of these services.
+
+## 12. Open publishing, discovery and session architecture
+
+Implemented platform behavior:
+
+- Teachers and students from any education center, as well as independent users,
+  are welcome. Basirat is the platform brand; affiliation is not an access rule.
+- Replace manual test-code entry as the primary student journey with a public
+  test catalog and teacher-shared links that open the selected test.
+- Support exactly two publication visibility options: `public` (discoverable in
+  the catalog) and `unlisted` (available through its shared link). Restricted
+  tests, approved class rosters, and group-membership access are out of scope.
+- Every test listing and introduction must prominently show the publisher's
+  full name. Require teachers to complete/confirm their full name in their
+  profile before publication; a first name, Telegram username, or center name
+  alone is insufficient. Keep ownership tied to the authenticated user ID, not
+  to the displayed name. Do not describe self-entered names as verified.
+- Separate teacher permissions over their own content/results from platform
+  administration. Anyone can upload and publish; no approval or ADMIN_IDS
+  membership is required. Confirm a full name before publishing.
+- Keep assessment sessions and their submissions/scoring separate from reusable
+  question content, so reuse does not mix cohorts or tertile rankings. Preserve
+  the existing correctness-first, final-score-after-closing policy.
+
+### Future access pricing and Click Uzbekistan
+
+Payment implementation is deferred. The standard future price is **5,000 UZS**
+per test, persisted in `test_templates.price_uzs`. Charging is disabled and all
+access remains free in this phase; no checkout, callbacks or Click SDK is added.
+
+- Visibility and pricing are independent: a public test may eventually require
+  payment, and an unlisted test may be free.
+- Use one server-side access decision for opening question content, saving
+  answers, and submitting an attempt. A client button or knowledge of a shared
+  link must not bypass a future paid-access rule.
+- Allow access to come from configurable free allowances, a confirmed purchase,
+  or a valid promo-code redemption. Keep those grants separate from test content
+  and the eventual Click payment records, so grading does not depend on a payment
+  provider.
+- Future examples include one free test followed by paid access, and promo codes
+  that grant free access. The scope/reset period of "one free test",
+  promo limits/expiry, and whether purchases cover a test or a specific session
+  are not decided yet; do not hard-code assumptions about them.
+- Publisher IDs in `ADMIN_IDS` identify Basirat publishers for future special
+  pricing rules only; those rules are not yet defined or implemented.
+
+`services/catalog_service.py` owns profiles, safe catalog summaries, visibility
+and session creation. `services/access_policy.py` is called before serving
+question content/crops, writing drafts, or accepting submissions (including
+legacy Telegram submissions). Future entitlements belong at that boundary,
+independently of payment-provider callbacks and grading.
+
+Migration 3 keeps existing IDs, questions, answers and results intact. Existing
+tests become unlisted; question-bearing tests get a reusable immutable template.
+Each `tests` row is one assessment session, with separate question statistics,
+submissions, drafts, tiers, ranks and a stable opaque `public_id`. Session creation
+uses an idempotency key so retrying a request cannot create extra cohorts.
+`/api/teacher/*` enforces ownership for everyone, including platform admins;
+`/api/admin/*` remains a compatibility alias with the same ownership checks.
+Public discovery exposes only active public sessions; students retain their own
+finished/unlisted results in personal history. Profiles are self-entered, not
+verified identities. Shared Telegram `/start t_<public_id>` links work without
+requiring BotFather Main Mini App configuration.

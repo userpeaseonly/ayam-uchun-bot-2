@@ -1,7 +1,6 @@
 """Transactional Mini App operations shared with the Telegram handlers."""
 
 import json
-import secrets
 import uuid
 
 import config
@@ -74,7 +73,7 @@ async def retry_import(import_id, owner_id):
         await db.commit()
 
 
-async def save_import(import_id, owner_id, document, revision):
+async def save_import(import_id, owner_id, document, revision, visibility=None, subject=None):
     parsed = TestDocument.model_validate(document)
     async with get_db_connection() as db:
         await db.execute("BEGIN IMMEDIATE")
@@ -82,8 +81,11 @@ async def save_import(import_id, owner_id, document, revision):
         require_owner(record, owner_id)
         if record["status"] != "review" or record["revision"] != revision:
             raise PlatformError("Qoralama o'zgargan yoki tahrirlash uchun tayyor emas. Yangilang.", 409)
-        await db.execute("UPDATE imports SET title = ?, document_json = ?, revision = revision + 1 WHERE id = ?",
-                         (parsed.title, parsed.model_dump_json(), import_id))
+        from services.catalog_service import publication_metadata
+        visibility, subject = publication_metadata(visibility if visibility is not None else record["visibility"],
+                                                  subject if subject is not None else record["subject"])
+        await db.execute("UPDATE imports SET title = ?, document_json = ?, visibility = ?, subject = ?, revision = revision + 1 WHERE id = ?",
+                         (parsed.title, parsed.model_dump_json(), visibility, subject, import_id))
         await db.commit()
     return revision + 1
 
@@ -109,19 +111,13 @@ async def publish_import(import_id, owner_id, revision):
             return current["published_test_id"]
         if current["status"] != "review" or current["revision"] != revision:
             raise PlatformError("Qoralama o'zgargan. Yangilang.", 409)
-        code = "T-" + str(secrets.randbelow(900000) + 100000)
-        while await one(db, "SELECT id FROM tests WHERE code = ?", (code,)):
-            code = "T-" + str(secrets.randbelow(900000) + 100000)
-        cursor = await db.execute(
-            "INSERT INTO tests(code, title, created_by, total_questions, open_questions_count, document_json, source_import_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (code, document.title, owner_id, len(document.questions), sum(q.kind == "open" for q in document.questions), document.model_dump_json(), import_id),
-        )
-        test_id = cursor.lastrowid
-        await db.executemany(
-            "INSERT INTO questions(test_id, question_num, question_type, correct_answer, ai_instructions, assigned_points, content_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            [(test_id, q.number, "open" if q.kind == "open" else "closed", q.answer or None,
-              q.rubric, q.points if q.kind == "open" else None, q.model_dump_json()) for q in document.questions],
-        )
+        from services.catalog_service import publisher_name, create_session
+        name = await publisher_name(db, owner_id)
+        serialized = document.model_dump_json()
+        cursor = await db.execute("INSERT INTO test_templates(owner_id, title, document_json, source_import_id) VALUES (?, ?, ?, ?)",
+                                  (owner_id, document.title, serialized, import_id))
+        template = {"id": cursor.lastrowid, "document_json": serialized, "source_import_id": import_id}
+        test_id = await create_session(db, owner_id, template, name, current["visibility"], current["subject"])
         await db.execute("UPDATE imports SET status = 'published', published_test_id = ?, document_json = ? WHERE id = ?", (test_id, document.model_dump_json(), import_id))
         await db.commit()
     return test_id
@@ -129,7 +125,7 @@ async def publish_import(import_id, owner_id, revision):
 
 async def load_test(code):
     async with get_db_connection() as db:
-        test = await one(db, "SELECT * FROM tests WHERE code = ?", (code.strip().upper(),))
+        test = await one(db, "SELECT * FROM tests WHERE code = ? OR public_id = ?", (code.strip().upper(), code.strip().lower()))
     if not test:
         raise PlatformError("Test topilmadi.", 404)
     return test
@@ -142,9 +138,14 @@ async def test_for_student(code, user_id):
     if test["status"] not in ("active", "finished"):
         raise PlatformError("Test vaqtincha yopiq.", 409)
     async with get_db_connection() as db:
+        from services.access_policy import require_access
+        access = await require_access(db, test, user_id)
         draft = await one(db, "SELECT * FROM answer_drafts WHERE test_id = ? AND user_id = ?", (test["id"], user_id))
     result = {"id": test["id"], "code": test["code"], "status": test["status"], "document": student_document(json.loads(test["document_json"])),
               "draft": json.loads(draft["answers_json"]) if draft else {}, "revision": draft["revision"] if draft else 0}
+    from services.catalog_service import summary
+    result.update(await summary(test["id"], user_id))
+    result["access"] = access
     result["submission"] = await submission_result(test["id"], user_id)
     return result
 
@@ -183,7 +184,9 @@ async def save_draft(test_id, user_id, answers, revision):
     async with get_db_connection() as db:
         await db.execute("BEGIN IMMEDIATE")
         test = await one(db, "SELECT * FROM tests WHERE id = ?", (test_id,))
-        if not test or test["status"] != "active":
+        from services.access_policy import require_access
+        await require_access(db, test, user_id)
+        if test["status"] != "active":
             raise PlatformError("Test yopilgan.", 409)
         if await one(db, "SELECT id FROM submissions WHERE test_id = ? AND user_id = ?", (test_id, user_id)):
             raise PlatformError("Javoblar allaqachon topshirilgan.", 409)
@@ -203,11 +206,13 @@ async def submit_answers(test_id, user, answers):
     user_id = user["id"]
     async with get_db_connection() as db:
         await db.execute("BEGIN IMMEDIATE")
+        test = await one(db, "SELECT * FROM tests WHERE id = ?", (test_id,))
+        from services.access_policy import require_access
+        await require_access(db, test, user_id)
         existing = await one(db, "SELECT id FROM submissions WHERE test_id = ? AND user_id = ?", (test_id, user_id))
         if existing:
             return existing["id"]  # Safe retry after lost HTTP response.
-        test = await one(db, "SELECT * FROM tests WHERE id = ?", (test_id,))
-        if not test or test["status"] != "active":
+        if test["status"] != "active":
             raise PlatformError("Test yopilgan; yangi javoblar qabul qilinmaydi.", 409)
         questions = await rows(db, "SELECT * FROM questions WHERE test_id = ? ORDER BY question_num", (test_id,))
         cleaned = validate_answers(questions, answers, final=True)
@@ -267,6 +272,8 @@ async def teacher_results(test_id, owner_id):
         answers = await rows(db, "SELECT a.*, q.question_num FROM answers a JOIN questions q ON q.id = a.question_id WHERE q.test_id = ? ORDER BY a.submission_id, q.question_num", (test_id,))
         questions = await rows(db, "SELECT * FROM questions WHERE test_id = ? ORDER BY question_num", (test_id,))
     test.pop("document_json", None)
+    from services.catalog_service import summary
+    test.update(await summary(test_id, owner_id))
     return {"test": test, "submissions": submissions, "answers": answers, "questions": questions}
 
 

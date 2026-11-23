@@ -38,6 +38,8 @@ async def platform_db(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "ADMIN_IDS", [111, 222])
     monkeypatch.setattr(config, "MINI_APP_URL", "")
     await init_db()
+    from services.catalog_service import save_profile
+    await save_profile(111, 'Dilnoza Karimova')
     return tmp_path
 
 
@@ -91,7 +93,7 @@ async def test_migration_is_repeatable_and_preserves_existing_data(platform_db):
     await init_db()
     assert (await get_test_by_id(test["id"]))["code"] == test["code"]
     async with get_db_connection() as db:
-        assert (await platform.one(db, "SELECT COUNT(*) AS n FROM schema_migrations"))["n"] == 2
+        assert (await platform.one(db, "SELECT COUNT(*) AS n FROM schema_migrations"))["n"] == 3
 
 
 @pytest.mark.asyncio
@@ -292,7 +294,7 @@ async def test_crop_materialization_and_asset_authorization(platform_db):
         client.session.cookie_jar.update_cookies({"ayam_session": make_session({"id": 9001})})
         assert (await client.get('/api/assets/' + page_id)).status == 404
         assert (await client.get('/api/assets/' + crop_id)).status == 200
-        assert (await client.get('/api/admin/imports/' + import_id)).status == 403
+        assert (await client.get('/api/admin/imports/' + import_id)).status == 404
 
 
 @pytest.mark.asyncio
@@ -304,7 +306,7 @@ async def test_api_session_csrf_owner_and_student_end_to_end(platform_db):
         assert response.status == 200
         assert (await response.json())["is_admin"] is False
         assert response.cookies["ayam_session"]["httponly"]
-        assert (await client.get('/api/admin/tests')).status == 403
+        assert (await client.get('/api/admin/tests')).status == 200
         assert (await client.get('/api/tests/' + test["code"])).status == 200
         assert (await client.post('/api/tests/' + test["code"] + '/submit', json={"answers": answers()}, headers={"Origin": "https://evil.example"})).status == 403
         assert (await client.post('/api/tests/' + test["code"] + '/submit', json={"answers": answers()})).status == 200

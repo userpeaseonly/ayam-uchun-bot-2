@@ -249,6 +249,42 @@ rolling back; an older image does not implement the Mini App job recovery.
 Back up `data/media/` alongside database snapshots: a SQLite backup alone does
 not contain uploaded PDFs, page previews, or approved diagram crops.
 
+### Open publishing and the public catalog
+
+Anyone with a Telegram account can use both student and teacher workspaces.
+`ADMIN_IDS` is not a teacher allowlist. A publisher must save their full name in
+**O‘qituvchi** before publishing; ownership always uses their authenticated
+Telegram ID. Names are self-entered, not verified.
+
+Students browse **Testlar katalogi**, search by test/teacher/subject, and open a
+test introduction before answering. **Boshlangan testlar** resumes saved drafts;
+**Natijalarim** includes their own submitted tests and final results.
+
+Teachers choose **Ochiq** (Public, discoverable) or **Havola orqali** (Unlisted,
+anyone with the link). Copy/share the session link from the results page. The
+Telegram link opens the bot, which offers a button opening that exact test.
+No class roster or approval is required. Teachers can manage only their own
+sources, submissions, answer overrides, session closure and reports.
+
+**Yangi sessiya** reuses approved immutable questions for a fresh group, with a
+new link and separate submissions, difficulty statistics, scores and ranking.
+Closing one session does not close another. Each student can submit once per
+session. Immediate correctness and delayed final scoring are unchanged.
+
+Migration 3 preserves existing test/result IDs and keeps previous tests unlisted.
+Existing publishers should confirm their full name, then optionally change a
+question-bearing session to Public. Legacy answer-key-only tests remain usable
+through the bot. Back up SQLite and media before release as usual; older images
+cannot read the newer schema without restoring a compatible backup.
+
+The future standard price is **5,000 UZS per test**, stored separately from
+visibility. **All tests remain free now.** Click payments, purchases, free
+allowances, promo codes and special Basirat rules are deferred. Publisher IDs
+in `ADMIN_IDS` are retained as the future brand distinction, without granting
+access to another teacher's data. Future paid-access checks must extend
+`services/access_policy.py`, which guards question reads, crops, drafts and
+submissions, independently of grading and the eventual provider integration.
+
 ### Mini App and DeepSeek imports
 
 The application serves a React/TypeScript Mini App and an authenticated aiohttp
@@ -271,7 +307,7 @@ is persistent; restarting the application does not lose received pages. Telegram
 message order determines page order even when downloads finish out of sequence.
 Repeated updates do not duplicate imports. Teachers receive a Mini App button
 that opens their exact draft, plus a notification when extraction finishes.
-Uploads are accepted only from configured admins in private chats, with a 20 MB
+Uploads are accepted from any Telegram user in private chats, with a 20 MB
 combined limit and no more than 30 photo pages. Telegram's hosted Bot API also
 limits file downloads to 20 MB.
 
@@ -288,7 +324,7 @@ points; partial credit is not implemented.** AI does not establish official keys
 Paste bulk closed keys (`1:A, 2:F`) or enter them in the editor; enter open rubrics
 manually. Separate answer-key PDF extraction is not included in this release.
 
-Student flow: enter a code, read the questions/passages, answer, save drafts,
+Student flow: browse the catalog or open a shared link, read the questions/passages, answer, save drafts,
 review, and confirm once. Closed correctness is immediate. Open answers stay
 pending during provider failures and retry automatically up to three times;
 teachers can retry exhausted grading jobs or override grades before finalizing.

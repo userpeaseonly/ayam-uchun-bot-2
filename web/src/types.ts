@@ -10,15 +10,21 @@ export type Question = {
 export type TestDocument = { version: 1; title: string; passages: Passage[]; questions: Question[]; warnings: string[] };
 export type ImportRecord = {
   id: string; title: string; status: string; progress: number; error: string | null;
-  revision: number; document: TestDocument | null; published_test_id: number | null;
+  visibility: Visibility; subject: string; revision: number; document: TestDocument | null; published_test_id: number | null;
   assets: { id: string; kind: string; page: number; original_name: string }[];
 };
-export type TestSummary = { id: number; code: string; title: string; status: string; total_questions: number };
+export type Visibility = 'public' | 'unlisted';
+export type Profile = { full_name: string };
+export type TestSummary = { id: number; public_id: string; code: string; title: string; status: string; total_questions: number;
+  open_questions_count: number; visibility: Visibility; subject: string; publisher_name: string; created_at: string;
+  share_url: string; template_id: number | null; standard_price_uzs: number; submission_id: number | null; draft_revision: number | null; score: number | null; rank: number | null };
+export type TeacherCounts = { total: number; active: number; review: number };
+export type CatalogPage = { counts?: TeacherCounts; items: TestSummary[]; next_cursor: number | null; subjects: string[] };
 export type Answers = Record<string, string | Record<string, string>>;
 export type Submission = { id: number; answers: { number: number; status: string; correct: boolean | null }[]; score?: number; rank?: number; total_correct?: number };
 export type StudentQuestion = Pick<Question, 'number' | 'kind' | 'text' | 'options' | 'passage_id' | 'parts'> & { media: string[] };
 export type StudentTest = {
-  id: number; code: string; status: string; revision: number; draft: Answers; submission: Submission | null;
+  id: number; public_id: string; publisher_name: string; code: string; status: string; revision: number; draft: Answers; submission: Submission | null;
   document: { title: string; questions: StudentQuestion[]; passages: (Pick<Passage, 'id' | 'title' | 'text'> & { media: string[] })[] };
 };
 export type Results = {

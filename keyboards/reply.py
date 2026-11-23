@@ -1,5 +1,6 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from config import ADMIN_IDS
+import config
 
 
 def get_main_menu_keyboard(user_id: int) -> ReplyKeyboardMarkup:
@@ -7,7 +8,7 @@ def get_main_menu_keyboard(user_id: int) -> ReplyKeyboardMarkup:
     buttons = [
         [KeyboardButton(text="✍️ Test topshirish")],
     ]
-    if is_admin:
+    if is_admin or config.MINI_APP_URL:
         buttons.insert(0, [KeyboardButton(text="➕ Yangi test yaratish"), KeyboardButton(text="📊 Testlar boshqaruvi")])
     buttons.append([KeyboardButton(text="ℹ️ Bot haqida va qo'llanma")])
 

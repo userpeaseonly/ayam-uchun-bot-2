@@ -133,9 +133,9 @@ async def test_import_start_and_receipts_enforce_ownership(upload_db):
 
 
 @pytest.mark.asyncio
-async def test_non_admin_group_upload_and_oversize_are_rejected_before_download(upload_db):
+async def test_group_upload_and_oversize_are_rejected_before_download(upload_db):
     bot = downloading_bot(b'%PDF-test')
-    for message in [fake_message(owner=9001), fake_message(chat_type='group'), fake_message(size=config.MAX_UPLOAD_BYTES + 1)]:
+    for message in [fake_message(chat_type='group'), fake_message(size=config.MAX_UPLOAD_BYTES + 1)]:
         await import_upload.receive_upload(message, bot)
         message.answer.assert_awaited_once()
     assert bot.download.await_count == 0
@@ -247,3 +247,12 @@ def test_review_keyboard_keeps_existing_query_parameters(upload_db):
         assert 'source=telegram' in url and 'import=' + 'a' * 32 in url
     finally:
         config.MINI_APP_URL = original
+
+
+@pytest.mark.asyncio
+async def test_independent_teacher_can_upload_without_admin_approval(upload_db):
+    message = fake_message(owner=9001)
+    await import_upload.receive_upload(message, downloading_bot(b'%PDF-independent'))
+    async with get_db_connection() as db:
+        record = await one(db, 'SELECT owner_id, status FROM imports')
+        assert record['owner_id'] == 9001 and record['status'] == 'queued'
