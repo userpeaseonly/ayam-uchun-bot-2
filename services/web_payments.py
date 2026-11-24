@@ -102,7 +102,7 @@ async def history(user_id):
 
 
 async def visible(user_id):
-    if user_id in config.ADMIN_IDS:
+    if any(available(provider, user_id) for provider in ('click', 'payme')):
         return True
     async with get_db_connection() as db:
         return bool(await one(db, 'SELECT id FROM web_payment_orders WHERE user_id=? AND bot_id=? LIMIT 1', (user_id, scope()[0])))

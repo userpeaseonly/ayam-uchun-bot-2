@@ -79,6 +79,26 @@ async def test_orders_fail_closed_until_merchant_flags_and_terms_ready(merchant_
 
 
 @pytest.mark.asyncio
+async def test_disabled_checkout_hides_unused_panel_but_preserves_existing_history(merchant_db, monkeypatch):
+    assert await payments.visible(111)
+    assert not await payments.visible(222)
+    monkeypatch.setattr(config, 'WEB_TEST_PAYMENTS_ENABLED', False)
+    assert not await payments.visible(111)
+    with pytest.raises(PlatformError):
+        await order()
+
+    monkeypatch.setattr(config, 'WEB_TEST_PAYMENTS_ENABLED', True)
+    item = await order()
+    monkeypatch.setattr(config, 'WEB_TEST_PAYMENTS_ENABLED', False)
+    assert await payments.visible(111)
+    history = await payments.history(111)
+    assert history['orders'][0]['id'] == item['id']
+    assert 'checkout_url' not in history['orders'][0]
+    assert not any(provider['enabled'] for provider in history['settings']['providers'])
+    assert not await payments.visible(222)
+
+
+@pytest.mark.asyncio
 async def test_concurrent_orders_and_checkout_money_units_are_server_owned(merchant_db):
     key = uuid.uuid4().hex
     orders = await asyncio.gather(*(order(key=key) for _ in range(8)))
@@ -263,7 +283,14 @@ async def test_browser_login_requires_nonce_approval_and_single_consumption(merc
 
 
 @pytest.mark.asyncio
-async def test_web_api_browser_session_csrf_owner_and_return_query_cannot_settle(merchant_db):
+async def test_web_api_browser_session_csrf_owner_and_return_query_cannot_settle(merchant_db, tmp_path, monkeypatch):
+    # Python CI runs independently of the frontend build job. Keep this HTTP
+    # security test independent of an ignored, locally built web/dist directory.
+    frontend = tmp_path / 'frontend'
+    frontend.mkdir()
+    html = '<!doctype html><title>Payment return fixture</title>'
+    (frontend / 'index.html').write_text(html, encoding='utf-8')
+    monkeypatch.setattr(config, 'FRONTEND_PATH', str(frontend))
     app = create_web_app()
     app[BOT_USERNAME_KEY] = 'ExampleBot'
     async with TestClient(TestServer(app)) as client:
@@ -278,7 +305,9 @@ async def test_web_api_browser_session_csrf_owner_and_return_query_cannot_settle
         item = await response.json()
         assert item['amount_uzs'] == 1000
         assert (await payments.owned_order(item['id'], 111))['user_id'] == 111
-        assert (await client.get('/?payment=' + item['id'] + '&status=paid')).status == 200
+        returned = await client.get('/?payment=' + item['id'] + '&status=paid')
+        assert returned.status == 200
+        assert await returned.text() == html
         assert (await payments.owned_order(item['id'], 111))['status'] == 'created'
         client.session.cookie_jar.update_cookies({'ayam_session': make_session({'id': 222}, audience='browser')})
         assert (await client.get('/api/web-payments/orders/' + item['id'])).status == 404

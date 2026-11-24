@@ -406,6 +406,8 @@ integration pilot below does not create access grants.
 ### Direct Click/Payme browser pilot (migration 6)
 
 - This is an admin-only 1,000 UZS integration pilot, not paid assessment access.
+  It remains disabled by default. Hide the unused panel unless a provider is
+  available; preserve access to existing order history after disabling checkout.
   `services/web_payments.py` owns fixed-price browser orders and hosted checkout
   links. Money is integer tiyin internally; convert to UZS decimal strings only
   for Click. Do not mix these tables with Stars orders or introduce access grants.

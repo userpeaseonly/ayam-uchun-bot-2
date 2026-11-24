@@ -317,6 +317,11 @@ price is future business metadata, not a Stars conversion or checkout price.
 
 ### Telegram Stars integration pilot
 
+Payments are currently deferred. Leave `STARS_TEST_PAYMENTS_ENABLED=false` and
+`WEB_TEST_PAYMENTS_ENABLED=false`; no merchant credentials are needed to run
+tests or use the assessments. Unused payment panels stay hidden while disabled.
+Existing payment history remains available for support and refunds.
+
 The **Profil → Telegram Stars** panel is private to configured admins. It creates
 a native **1 Stars** invoice after accepting versioned terms. It grants no test,
 subscription, balance or access. Payment events, order history, refund requests,
