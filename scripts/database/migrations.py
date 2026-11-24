@@ -93,6 +93,64 @@ MIGRATIONS = [
         )""",
         "CREATE INDEX idx_attempt_deadline ON timed_attempts(deadline_at)",
     ],
+    [
+        """CREATE TABLE payment_orders (
+            id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, bot_id INTEGER NOT NULL,
+            environment TEXT NOT NULL CHECK(environment IN ('test','live')),
+            request_key TEXT NOT NULL, purpose TEXT NOT NULL,
+            amount INTEGER NOT NULL CHECK(amount > 0), currency TEXT NOT NULL CHECK(currency='XTR'),
+            status TEXT NOT NULL DEFAULT 'created' CHECK(status IN ('created','invoice_ready','invoice_failed','checkout','paid','refund_pending','refunded')),
+            terms_version TEXT NOT NULL, accepted_at REAL NOT NULL,
+            created_at REAL NOT NULL, expires_at REAL NOT NULL, invoice_url TEXT,
+            pre_checkout_id TEXT, charge_id TEXT,
+            UNIQUE(user_id,bot_id,environment,request_key), UNIQUE(bot_id,environment,charge_id)
+        )""",
+        "CREATE INDEX idx_payment_owner ON payment_orders(user_id,bot_id,environment,created_at)",
+        """CREATE TABLE star_receipts (
+            charge_id TEXT NOT NULL, bot_id INTEGER NOT NULL, environment TEXT NOT NULL,
+            order_id TEXT REFERENCES payment_orders(id), user_id INTEGER NOT NULL,
+            payload TEXT NOT NULL, amount INTEGER NOT NULL CHECK(amount > 0),
+            status TEXT NOT NULL CHECK(status IN ('paid','refund_pending','refunded')),
+            issue TEXT, received_at REAL NOT NULL, refunded_at REAL,
+            refund_attempts INTEGER NOT NULL DEFAULT 0, next_refund_at REAL NOT NULL DEFAULT 0,
+            PRIMARY KEY(bot_id,environment,charge_id)
+        )""",
+        "CREATE INDEX idx_star_refunds ON star_receipts(bot_id,environment,status,next_refund_at)",
+    ],
+    [
+        """CREATE TABLE browser_logins (
+            id TEXT PRIMARY KEY, poll_hash TEXT NOT NULL, expires_at REAL NOT NULL,
+            code TEXT NOT NULL, identity_json TEXT, consumed INTEGER NOT NULL DEFAULT 0
+        )""",
+        "CREATE INDEX idx_browser_login_expiry ON browser_logins(expires_at)",
+        """CREATE TABLE web_payment_orders (
+            id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, bot_id INTEGER NOT NULL,
+            provider TEXT NOT NULL CHECK(provider IN ('click','payme')),
+            environment TEXT NOT NULL CHECK(environment IN ('test','live')),
+            merchant TEXT NOT NULL, request_key TEXT NOT NULL,
+            purpose TEXT NOT NULL, amount INTEGER NOT NULL CHECK(amount>0),
+            status TEXT NOT NULL DEFAULT 'created' CHECK(status IN ('created','pending','paid','cancelled','refunded')),
+            terms_version TEXT NOT NULL, accepted_at INTEGER NOT NULL,
+            created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL,
+            UNIQUE(user_id,bot_id,provider,environment,merchant,request_key)
+        )""",
+        "CREATE INDEX idx_web_payment_owner ON web_payment_orders(user_id,bot_id,created_at)",
+        """CREATE TABLE provider_transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, order_id TEXT NOT NULL REFERENCES web_payment_orders(id),
+            provider TEXT NOT NULL, environment TEXT NOT NULL, bot_id INTEGER NOT NULL,
+            merchant TEXT NOT NULL, external_id TEXT NOT NULL,
+            provider_time INTEGER NOT NULL, create_time INTEGER NOT NULL,
+            perform_time INTEGER NOT NULL DEFAULT 0, cancel_time INTEGER NOT NULL DEFAULT 0,
+            state INTEGER NOT NULL CHECK(state IN (1,2,-1,-2)), reason INTEGER,
+            UNIQUE(provider,environment,bot_id,merchant,external_id)
+        )""",
+        "CREATE UNIQUE INDEX idx_one_active_payment ON provider_transactions(order_id) WHERE state IN (1,2)",
+        """CREATE TABLE payment_fiscal_data (
+            transaction_id INTEGER NOT NULL REFERENCES provider_transactions(id),
+            kind TEXT NOT NULL, data_json TEXT NOT NULL,
+            PRIMARY KEY(transaction_id,kind)
+        )""",
+    ],
 ]
 
 

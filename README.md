@@ -258,10 +258,20 @@ Telegram ID. Names are self-entered, not verified.
 
 The default student workspace has **Testlar**, **Natijalarim**, and **Profil**
 navigation (bottom tabs on phones/tablets, sidebar on desktop). Students search
-by test/teacher/subject and see the publisher's full name, question count and
-duration on every card. Started tests appear above the catalog with saved state,
-a live server-synchronized countdown where applicable, and one-tap **Davom
-ettirish**. **Natijalarim** includes submitted tests and final results.
+by test or teacher name and see the publisher's full name, question count and
+duration on every card. The compact Testlar page shows a personal, activity-based
+prompt, one name/teacher search field and two tests at a time with previous/next
+pagination. The subject filter, free labels and repeated introductory copy are
+removed. A running attempt appears as an amber countdown card; additional started
+attempts remain available in an expandable list. Untimed drafts can resume later.
+The header and bottom navigation retain their existing appearance.
+
+The same compact content design covers results, profiles, teacher tools,
+question review and submission: white cards, plum actions, soft pink highlights,
+amber pending states and muted forest green for completed work. Optional settings
+and detailed explanations open on demand; transitions respect reduced motion.
+**Natijalarim** shows two results per page. Publisher setup stays collapsed on
+the student profile and opens for a new teacher when needed.
 
 A test introduction explains timing and submission rules before starting. Test
 screens hide the global header/sidebar/bottom tabs to keep questions, countdown,
@@ -271,10 +281,11 @@ and waiting for final session scores have separate messages.
 Open **O‘qituvchi kabineti** from the account menu, **Profil**, or the desktop
 sidebar. Teachers have **Testlar**, **Qoralamalar**, and **Natijalar** sections.
 **Test yuklash** opens Telegram forwarding and local PDF/photo upload choices.
-Published imports move out of drafts. Opening a test from **Testlar** expands
-sharing controls; opening it from **Natijalar** prioritizes participants and
-results. Visibility, subject, duration and new-session controls are grouped
-under **Havola va test sozlamalari**. Existing teacher/import and student/test
+Published imports move out of drafts. Teacher lists show three items per page;
+participants and answer details show four, and question analysis shows six.
+Test pages prioritize results, with copy/share actions visible and visibility,
+subject, duration and new-session controls under **Test sozlamalari**.
+Existing teacher/import and student/test
 deep links still open their intended destination directly.
 
 Teachers choose **Ochiq** (Public, discoverable) or **Havola orqali** (Unlisted,
@@ -295,12 +306,169 @@ through the bot. Back up SQLite and media before release as usual; older images
 cannot read the newer schema without restoring a compatible backup.
 
 The future standard price is **5,000 UZS per test**, stored separately from
-visibility. **All tests remain free now.** Click payments, purchases, free
+visibility. **All tests remain free now.** Paid test access, purchases, free
 allowances, promo codes and special Basirat rules are deferred. Publisher IDs
 in `ADMIN_IDS` are retained as the future brand distinction, without granting
 access to another teacher's data. Future paid-access checks must extend
 `services/access_policy.py`, which guards question reads, crops, drafts and
 submissions, independently of grading and the eventual provider integration.
+Digital services sold inside Telegram must use Telegram Stars; the stored UZS
+price is future business metadata, not a Stars conversion or checkout price.
+
+### Telegram Stars integration pilot
+
+The **Profil → Telegram Stars** panel is private to configured admins. It creates
+a native **1 Stars** invoice after accepting versioned terms. It grants no test,
+subscription, balance or access. Payment events, order history, refund requests,
+and recovery survive restarts (additive migration 5). Other students see no pilot.
+An existing payer keeps history/refund access if new purchases are disabled.
+
+New payments are **disabled by default**. For testing without real charges, use
+a separate account and bot on [Telegram's test server](https://core.telegram.org/bots/webapps#testing-mini-apps),
+with a separate database/media volume and Mini App URL. A normal BotFather Click
+test provider token does **not** create a Stars sandbox. Set these variables in
+that isolated deployment's environment file:
+
+```dotenv
+# BOT_TOKEN must belong to the bot created in the test server's BotFather.
+TELEGRAM_TEST_ENVIRONMENT=true
+STARS_TEST_PAYMENTS_ENABLED=true
+STARS_ALLOW_LIVE_TEST_PAYMENTS=false
+PAYMENT_SUPPORT_USERNAME=your_actual_support_username
+# ADMIN_IDS must contain your Telegram test account's numeric ID.
+```
+
+Start the bot with the usual Compose command. In the test Telegram client, open
+the Mini App, choose **Profil**, read/accept the terms, then choose
+**Sinov to‘lovi · ⭐ 1**. Telegram opens its native invoice inside the app. Confirm
+there, check **To‘langan** in history, then use **Starsni qaytarish** and check
+**Qaytarilgan**. Repeat while reopening the Mini App and restarting the bot to
+verify recovery. Checkout is disabled in ordinary browser previews.
+
+`TELEGRAM_TEST_ENVIRONMENT=true` switches *all* Bot API requests to Telegram's
+test endpoint; it does not make an ordinary bot token a test token. Never point
+the production bot at that endpoint. If you deliberately test with the normal
+production Telegram environment instead, keep `TELEGRAM_TEST_ENVIRONMENT=false`
+and set both `STARS_TEST_PAYMENTS_ENABLED=true` and
+`STARS_ALLOW_LIVE_TEST_PAYMENTS=true`: this charges **real 1 Stars**, with a full
+refund available from history. Keep live testing limited to admins. Configure
+a support username you control; the pilot stays disabled without one. `/terms`
+and `/paysupport` expose terms and the support contact.
+
+The server fixes `XTR`, amount 1, buyer, bot/environment, and invoice purpose.
+Only trusted Bot API payment updates/history settle an order; Mini App callbacks
+are advisory. Duplicate/mismatched pilot charges are queued for refunds. The
+single-instance worker retries pending refunds and scans the bot's Stars history
+every minute to recover missed updates, including same-ID refund transactions.
+This full scan is intended for this small pilot; introduce durable incremental
+reconciliation before general commercial rollout. No Click/Payme credentials
+are needed: Stars uses an empty provider token.
+
+Deploy using the existing CI image and digest command after the usual backup.
+No new external service or dependency is required. Automated tests use fake Bot
+API responses; native checkout must still be verified in Telegram's test client.
+
+### Standalone browser: Click and Payme pilot
+
+Direct merchant adapters are implemented for Click Shop API and Payme Merchant
+API. They are separate from Telegram invoices and the BotFather provider token.
+This is an **admin-only 1,000 UZS integration pilot**. It does not grant test
+access, add a wallet balance, or enable the future pricing/allowance rules.
+All assessment tests remain free. The Mini App does not show these checkout
+buttons; they require a server-issued **browser** session.
+
+First check whether your YATT already has merchant accounts. If not, apply through
+Click Business and Payme Business using your business documents. Ask Click for a
+**website integration using Shop API (Prepare/Complete)** and dedicated test
+service credentials. Ask Payme for a **web cash desk with billing / Merchant API**
+and its merchant ID, `TEST_KEY`, and later the live key. Documents alone and a
+BotFather test token do not configure these direct integrations. Enter secret
+keys only in your private environment file, never Git or chat.
+
+Set `BROWSER_APP_URL=https://app.basirat.uz` (or another HTTPS origin routed to
+this application). You may use the existing host by opening it directly in Safari
+or Chrome. The browser offers **Telegram orqali kirish**. It shows a six-digit
+code, opens a private bot login request, and waits for explicit confirmation of
+the matching code. Return to the original browser tab: its private five-minute
+nonce is exchanged once for an HttpOnly session. No payment or test access is
+granted by approving login. New Mini App logins remain Telegram sessions.
+
+Configure test credentials separately:
+
+```dotenv
+BROWSER_APP_URL=https://app.basirat.uz
+WEB_TEST_PAYMENTS_ENABLED=true
+WEB_ALLOW_LIVE_TEST_PAYMENTS=false
+PAYMENT_SUPPORT_USERNAME=your_actual_support_username
+CLICK_ENVIRONMENT=test
+CLICK_TEST_SERVICE_ID=your_click_test_service_id
+CLICK_TEST_MERCHANT_ID=your_click_test_merchant_id
+CLICK_TEST_SECRET_KEY=your_click_test_secret
+PAYME_ENVIRONMENT=test
+PAYME_TEST_MERCHANT_ID=your_payme_web_cash_desk_id
+PAYME_TEST_KEY=your_payme_TEST_KEY
+```
+
+The browser login account must be in `ADMIN_IDS` to create pilot orders. Missing
+credentials disable each provider independently. Payme's test checkout uses
+`https://test.paycom.uz`; live checkout uses `https://checkout.paycom.uz`.
+Click uses `https://my.click.uz/services/pay`: **the word `test` in our config does
+not make a live Click service a sandbox**. Use only Click-issued test credentials
+until intentional live testing. Normal bot credentials remain on
+`TELEGRAM_TEST_ENVIRONMENT=false`; do not change that flag for Click/Payme tests.
+
+Register these HTTPS callbacks with the providers (replace the hostname):
+
+| Provider | Test callback |
+| --- | --- |
+| Click Prepare | `https://app.basirat.uz/api/providers/click/test/prepare` |
+| Click Complete | `https://app.basirat.uz/api/providers/click/test/complete` |
+| Payme Merchant API | `https://app.basirat.uz/api/providers/payme/test` |
+
+For Payme configure the cash desk account field **order_id**, type string, as a
+one-time order account. Authenticate callbacks using `Paycom:TEST_KEY` with HTTP
+Basic authentication; use the live key on the separate `/live` endpoint later.
+Click callbacks verify the configured service ID and MD5 signature over original
+raw strings, including `merchant_prepare_id` for Complete. Both callbacks are
+public server-to-server endpoints with provider authentication; they do not use
+browser cookies or browser-origin authentication.
+
+Open **Profil → Click va Payme**, accept the pilot terms, select the configured
+provider, and complete its sandbox checkout. Browser returns (including
+`?payment=...`) never mark orders paid: history polls our database for a verified
+Complete/Perform callback. The OS/provider may open a payment app or a web page;
+automatic opening of an installed app is not guaranteed on every device.
+
+Money is stored as integer tiyin: this pilot is 100,000 tiyin. Click receives
+1,000.00 UZS; Payme receives 100,000 tiyin. Orders and external transaction IDs are
+isolated by bot, provider, environment, merchant account, and owner. Atomic
+transactions handle duplicate and concurrent callbacks; Payme also supports
+cancellation, twelve-hour timeout, transaction checks, reconciliation statements,
+and separate sale/refund fiscal metadata. Existing callbacks continue to work
+when new purchases are disabled, provided the original merchant keys remain
+configured. A new checkout order expires after fifteen minutes; already reserved
+transactions can complete after this window.
+
+Refunds are operator-managed through the merchant dashboard/support contact.
+Payme's authenticated cancellation callback records the resulting cancellation or
+refund. Click Shop API cancellation handles failed, uncompleted payments only;
+this pilot does not implement Click Merchant API reversal or automatic status
+reconciliation. If a callback never arrives, check the merchant dashboard and
+request provider replay; do not manually trust the buyer's return page.
+
+Before live use, complete provider sandbox certification, merchant onboarding,
+required fiscal/item configuration with each provider, and a controlled end-to-end
+test. Set each provider's `*_ENVIRONMENT=live`, configure its separate live keys
+and `/live` callbacks, then explicitly opt in with
+`WEB_ALLOW_LIVE_TEST_PAYMENTS=true`. This spends real money and still grants no
+assessment access. Default flags disable purchases; no merchant account has been
+connected automatically and no real charge has been made.
+
+Migration 6 adds browser login challenges and web order/transaction/fiscal tables.
+Deploy using the existing image/digest workflow and backup procedure; no new
+dependencies or services are needed. The adapters follow
+[Click's official integration reference](https://github.com/click-llc/click-integration-django)
+and [Payme's Merchant API](https://developer.help.paycom.uz/metody-merchant-api/).
 
 ### Student time limits
 
@@ -313,13 +481,18 @@ choose a different limit before students start.
 
 **Testni boshlash** records one server deadline for that student. Refreshing,
 closing Telegram, reopening, or using another device never restarts or pauses it.
+Timed tests have no pause option: students can return only within the original
+remaining time. The catalog separates these running tests from untimed drafts,
+which can be saved and resumed later. Leaving a timed attempt warns that the
+clock continues.
 The countdown uses server time and resynchronizes after reconnecting or returning
 to the app. It warns in the last minute and locks inputs when time expires.
 
 Expiry automatically submits the last answers received by the server, including
 blank answers for unanswered questions. Unsaved/offline edits arriving after the
 deadline are not accepted. A dedicated durable expiry worker handles students
-who have closed the app, and resumes after a server restart. Manual submission
+who have closed the app, and resumes after a server restart. Expiry jobs keep
+retrying temporary failures rather than abandoning an overdue attempt. Manual submission
 and expiry are idempotent, with the same grading and delayed-score policy.
 Individual expiry does not finalize the whole test; the teacher still closes the
 session once all timed attempts have submitted or expired and grading is done.

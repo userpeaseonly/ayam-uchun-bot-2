@@ -350,11 +350,13 @@ Implemented platform behavior:
   question content, so reuse does not mix cohorts or tertile rankings. Preserve
   the existing correctness-first, final-score-after-closing policy.
 
-### Future access pricing and Click Uzbekistan
+### Future access pricing
 
-Payment implementation is deferred. The standard future price is **5,000 UZS**
+Paid test access is deferred. The standard future price is **5,000 UZS**
 per test, persisted in `test_templates.price_uzs`. Charging is disabled and all
-access remains free in this phase; no checkout, callbacks or Click SDK is added.
+assessment access remains free. Digital purchases inside Telegram must use Stars;
+the UZS field is not an XTR conversion. No Click SDK is added. The private Stars
+integration pilot below does not create access grants.
 
 - Visibility and pricing are independent: a public test may eventually require
   payment, and an unlisted test may be free.
@@ -363,7 +365,7 @@ access remains free in this phase; no checkout, callbacks or Click SDK is added.
   link must not bypass a future paid-access rule.
 - Allow access to come from configurable free allowances, a confirmed purchase,
   or a valid promo-code redemption. Keep those grants separate from test content
-  and the eventual Click payment records, so grading does not depend on a payment
+  and payment records, so grading does not depend on a payment
   provider.
 - Future examples include one free test followed by paid access, and promo codes
   that grant free access. The scope/reset period of "one free test",
@@ -371,6 +373,73 @@ access remains free in this phase; no checkout, callbacks or Click SDK is added.
   are not decided yet; do not hard-code assumptions about them.
 - Publisher IDs in `ADMIN_IDS` identify Basirat publishers for future special
   pricing rules only; those rules are not yet defined or implemented.
+
+### Native Stars pilot (migration 5)
+
+- `services/stars_payments.py` owns fixed 1-XTR integration orders, per-buyer
+  idempotency keys, terms acceptance, pre-checkout validation, durable receipts,
+  refund retry/backoff, and transaction-history reconciliation. Orders/receipts
+  are scoped to bot ID and real Telegram test/live environment. Do not use a
+  client checkout callback as evidence of payment or grant access here.
+- `handlers/payments.py` is registered before legacy/FSM handlers. It answers
+  pre-checkout within Telegram's ten-second deadline and records trusted success
+  and refund messages before acknowledgement. `/terms` and `/paysupport` provide
+  pilot terms and the configured operator contact.
+- `main.py` binds the existing Bot to the authenticated same-origin payment
+  API and runs one recovery worker. It selects aiogram's TEST API endpoint only
+  when `TELEGRAM_TEST_ENVIRONMENT=true`. Telegram's test server needs its own
+  account, bot token and isolated deployment; a Click test provider token cannot
+  be used for Stars. Stars invoices always use `provider_token=''` and `XTR`.
+- The Profile panel is visible only to enabled pilot admins or prior payers.
+  Invoice creation/pre-checkout require `ADMIN_IDS`, enabled pilot flag, a valid
+  support username, and either the actual test environment or explicit live-test
+  opt-in. Defaults disable new purchases. Existing payer history/refunds persist
+  after disabling. Live testing spends real Stars and is clearly labelled.
+- Refunds are monotonic/idempotent even when a refund event arrives before its
+  success event. Mismatched/extra charges are recorded and queued for refund.
+  Full history scanning recovers missed updates and same-ID refunds for this
+  small pilot; plan incremental reconciliation before general commercial use.
+- `tests/test_stars_payments.py` uses fake Bot API calls, verifies retry/race,
+  isolation/ownership, terms/flags, refund/restart, reconciliation, routing and
+  API auth. Native invoice UI still requires a real Telegram test client.
+
+### Direct Click/Payme browser pilot (migration 6)
+
+- This is an admin-only 1,000 UZS integration pilot, not paid assessment access.
+  `services/web_payments.py` owns fixed-price browser orders and hosted checkout
+  links. Money is integer tiyin internally; convert to UZS decimal strings only
+  for Click. Do not mix these tables with Stars orders or introduce access grants.
+- `services/click_payments.py` handles signed Shop API Prepare/Complete.
+  Validate the raw field order/signature, service, amount, order, prepare ID and
+  external transaction binding. Negative Complete cancels pending reservations;
+  it must never regress an already paid receipt. No Click reversal/status REST
+  adapter is included in this pilot; refunds/reconciliation require the operator.
+- `services/payme_payments.py` handles authenticated JSON-RPC CheckPerform,
+  Create, Perform, Cancel, Check, GetStatement and SetFiscalData. Use separate
+  test/live merchant credentials and routes; Basic username is Paycom. Commit
+  timeout cancellation even when rejecting an operation. Cancellation/refund
+  states are monotonic. GetStatement uses provider creation time inclusively.
+- `provider_transactions` and `web_payment_orders` are scoped by bot ID,
+  provider, environment and merchant. A partial unique index prevents two active
+  payments per order. Retries and callbacks run under SQLite write transactions;
+  no network requests occur inside them. Disabling creation does not disable
+  authenticated completion/cancellation of existing orders.
+- Browser checkout requires a signed browser-audience session. Ordinary Mini App
+  sessions cannot call it; browser return query parameters cannot settle orders.
+  New Mini App launches refresh their Telegram session and do not expose direct
+  checkout. Never add these buttons to paid test screens inside Telegram.
+- `services/browser_auth.py` uses five-minute, one-use browser challenges, a
+  hashed private nonce in an HttpOnly cookie, and explicit private-chat approval
+  with matching codes. `handlers/browser_auth.py` handles approvals before FSM
+  catch-alls. Identity comes only from Telegram updates, not the polling client.
+- Defaults disable web purchases. BROWSER_APP_URL enables browser login at a
+  configured HTTPS origin; it may share the existing app hostname. Merchant
+  accounts, provider sandbox verification, required fiscal/item configuration,
+  and controlled live testing remain operator steps. Click test credentials must
+  be a dedicated test service; merely labelling a live service 'test' does not
+  prevent real charges. BotFather tokens are not used by either direct adapter.
+- Tests use fake merchant keys, isolated SQLite and provider callbacks; no real
+  provider charge, merchant account, secret or production environment is touched.
 
 `services/catalog_service.py` owns profiles, safe catalog summaries, visibility
 and session creation. `services/access_policy.py` is called before serving
@@ -407,7 +476,9 @@ draft using the same transactional grading code as a manual submission.
 
 `services/timer_service.py` is the deadline authority. Start queues a persistent
 `expire` job. A separate expiry worker cannot be starved by slow AI calls;
-`recover_jobs()` recovers interrupted work. Student reads also settle an expired
+`recover_jobs()` recovers interrupted work and previously failed expiry jobs.
+Expiry jobs retry with capped backoff until they succeed; unlike AI jobs, they
+have no terminal retry limit. Student reads also settle an expired
 attempt immediately. Teacher finalization first settles due timers, then blocks
 while any timed attempt is still in progress or grading is pending. Timeout
 submissions preserve correctness-first, points-after-finalization behavior.
@@ -415,6 +486,9 @@ submissions preserve correctness-first, points-after-finalization behavior.
 `GET /api/tests/{public_id}/timer` returns server/deadline timestamps and any
 submission. The frontend countdown uses monotonic elapsed time, resynchronizes
 on focus/visibility/online changes and periodically, and locks inputs at zero.
+The catalog distinguishes running timed attempts from untimed resumable drafts;
+leaving a timed attempt warns that the original clock continues. Only untimed
+tests offer saving and resuming later.
 Only answers accepted by the server before the deadline count. Do not trust a
 client timestamp, extend deadlines when refreshing, or use browser-only timers.
 
@@ -436,14 +510,32 @@ reset the deadline. Resume cards read the authenticated timer endpoint and share
 the server-synchronized countdown hook with the attempt screen. Expiry refreshes
 both lists. Do not start an attempt just to render its catalog or resume card.
 
+The compact catalog requests `limit=2` and uses a client cursor history for
+previous/next pages; the API validates limits 1–24 and defaults to 24 for existing
+clients. Search resets the page history. The personal prompt uses the user's name
+and started-attempt state, with no AI call on page load. No subject filter or
+free/subject badges appear in discovery. Amber indicates running time; muted
+forest green marks final submission and accepted answers. Content entrance and
+press transitions respect reduced-motion preferences. Header and global
+navigation styles remain unchanged.
+
 Student detail/assessment views hide global navigation. They retain explicit
 back actions, Telegram BackButton support, autosave, progress, question map,
 review, timer guards and correctness-first/delayed-final-score behavior.
 
+`pages.css`, loaded after workspace styles, applies the compact design to main
+content and dialogs without changing the header or global navigation. Shared
+`PageHeading`, `usePagedList` and `PageControls` keep presentation consistent.
+Student results show two cards; teacher lists show three rows; participants and
+answer details show four; question analysis shows six; payment history shows
+three. Teacher paging still loads further server batches when needed. Search
+and tab changes reset the relevant pagination.
+
 Teacher uploads are opened on demand. Drafts omit already-published imports;
-the published assessment remains accessible in Testlar and Natijalar. Opening a
-managed test expands sharing; the results entry keeps it collapsed. Session
-settings and creation are grouped inside sharing controls. The source/editor
-layout, review requirements, ownership checks and irreversible-action
-confirmations remain intact. These UI changes do not add payment logic or alter
-the database schema beyond the timer migration documented above.
+the published assessment remains accessible in Testlar and Natijalar. Test
+settings start collapsed behind the settings action. Publisher setup is optional
+on the student profile and prompted for an unregistered teacher. Publication,
+question format, AI feedback and receipt details use disclosures. Required review
+checks, ownership, confirmations, timer warnings, payment amounts/consent and
+correctness-first/delayed-final-score behavior remain explicit. These presentation
+changes do not alter the database schema or payment settlement logic.

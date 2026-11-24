@@ -41,12 +41,16 @@ def session_signature(payload):
     return hmac.new(secret, payload.encode(), hashlib.sha256).hexdigest()
 
 
-def make_session(user):
-    payload = base64.urlsafe_b64encode(json.dumps({"user": user, "exp": int(time.time()) + 12 * 3600}, separators=(",", ":")).encode()).decode()
+def make_session(user, *, audience="telegram"):
+    payload = base64.urlsafe_b64encode(json.dumps({"user": user, "audience": audience, "exp": int(time.time()) + 12 * 3600}, separators=(",", ":")).encode()).decode()
     return payload + "." + session_signature(payload)
 
 
 def read_session(token):
+    return read_session_context(token)["user"]
+
+
+def read_session_context(token):
     try:
         payload, signature = token.rsplit(".", 1)
         if len(token) > 8000 or not config.BOT_TOKEN or not hmac.compare_digest(signature, session_signature(payload)):
@@ -54,6 +58,9 @@ def read_session(token):
         value = json.loads(base64.urlsafe_b64decode(payload))
         if value["exp"] <= time.time():
             raise ValueError()
-        return value["user"]
+        audience = value.get("audience", "telegram")
+        if audience not in ("telegram", "browser"):
+            raise ValueError()
+        return {"user": value["user"], "audience": audience}
     except (ValueError, KeyError, TypeError) as error:
         raise PlatformError("Sessiya tugagan. Mini App'ni qayta oching.", 401) from error

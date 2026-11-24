@@ -47,3 +47,26 @@ TELEGRAM_AUTH_MAX_AGE: int = 3600
 TIER_EASY_POINTS: float = 1.1
 TIER_MEDIUM_POINTS: float = 1.7
 TIER_HARD_POINTS: float = 2.5
+
+# Stars integration pilot. These flags do not enable paid assessment access.
+TELEGRAM_TEST_ENVIRONMENT: bool = os.getenv("TELEGRAM_TEST_ENVIRONMENT", "false").lower() == "true"
+STARS_TEST_PAYMENTS_ENABLED: bool = os.getenv("STARS_TEST_PAYMENTS_ENABLED", "false").lower() == "true"
+STARS_ALLOW_LIVE_TEST_PAYMENTS: bool = os.getenv("STARS_ALLOW_LIVE_TEST_PAYMENTS", "false").lower() == "true"
+PAYMENT_SUPPORT_USERNAME: str = os.getenv("PAYMENT_SUPPORT_USERNAME", "").strip()
+
+# Standalone browser checkout; unrelated to Telegram's provider tokens.
+BROWSER_APP_URL = os.getenv("BROWSER_APP_URL", "").rstrip("/")
+WEB_TEST_PAYMENTS_ENABLED = os.getenv("WEB_TEST_PAYMENTS_ENABLED", "false").lower() == "true"
+WEB_ALLOW_LIVE_TEST_PAYMENTS = os.getenv("WEB_ALLOW_LIVE_TEST_PAYMENTS", "false").lower() == "true"
+CLICK_ENVIRONMENT = os.getenv("CLICK_ENVIRONMENT", "test")
+PAYME_ENVIRONMENT = os.getenv("PAYME_ENVIRONMENT", "test")
+CLICK_TEST_SERVICE_ID = os.getenv("CLICK_TEST_SERVICE_ID", "")
+CLICK_TEST_MERCHANT_ID = os.getenv("CLICK_TEST_MERCHANT_ID", "")
+CLICK_TEST_SECRET_KEY = os.getenv("CLICK_TEST_SECRET_KEY", "")
+CLICK_SERVICE_ID = os.getenv("CLICK_SERVICE_ID", "")
+CLICK_MERCHANT_ID = os.getenv("CLICK_MERCHANT_ID", "")
+CLICK_SECRET_KEY = os.getenv("CLICK_SECRET_KEY", "")
+PAYME_TEST_MERCHANT_ID = os.getenv("PAYME_TEST_MERCHANT_ID", "")
+PAYME_TEST_KEY = os.getenv("PAYME_TEST_KEY", "")
+PAYME_MERCHANT_ID = os.getenv("PAYME_MERCHANT_ID", "")
+PAYME_KEY = os.getenv("PAYME_KEY", "")

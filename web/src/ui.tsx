@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 
-export type IconName = 'arrow' | 'back' | 'book' | 'grid' | 'upload' | 'file' | 'image' | 'check' | 'close' | 'chevron' | 'clock' | 'chart' | 'plus' | 'search' | 'help' | 'send' | 'shield' | 'download' | 'refresh' | 'spark' | 'copy' | 'edit' | 'users' | 'logout';
+export type IconName = 'arrow' | 'back' | 'book' | 'grid' | 'upload' | 'file' | 'image' | 'check' | 'close' | 'chevron' | 'clock' | 'chart' | 'plus' | 'search' | 'help' | 'send' | 'shield' | 'download' | 'refresh' | 'spark' | 'copy' | 'edit' | 'users' | 'logout' | 'settings';
 const paths: Record<IconName, ReactNode> = {
   arrow: <path d="M5 12h14m-6-6 6 6-6 6" />,
   back: <path d="M19 12H5m6-6-6 6 6 6" />,
@@ -26,6 +26,7 @@ const paths: Record<IconName, ReactNode> = {
   copy: <><rect x="8" y="8" width="12" height="13" rx="2" /><path d="M15 8V3H3v13h5" /></>,
   edit: <path d="m15 4 5 5M4 20l5-1L21 7l-5-5L4 14ZM3 21h18" />,
   users: <><circle cx="9" cy="8" r="3" /><path d="M3 21v-3a6 6 0 0 1 12 0v3m2-16a3 3 0 0 1 0 6m1 4a5 5 0 0 1 3 5v1" /></>,
+  settings: <><circle cx="12" cy="12" r="3" /><path d="m9 3-.6 2.4-2 .9-2.2-.7-2 3.4 1.7 1.7v2.6l-1.7 1.7 2 3.4 2.2-.7 2 .9L9 21h6l.6-2.4 2-.9 2.2.7 2-3.4-1.7-1.7v-2.6l1.7-1.7-2-3.4-2.2.7-2-.9L15 3Z" /></>,
   logout: <path d="M9 4H4v16h5m4-12 4 4-4 4m-5-4h13" />,
 };
 
@@ -43,6 +44,23 @@ export function Alert({ children, tone = 'error' }: { children: ReactNode; tone?
 
 export function EmptyState({ icon = 'book', title, children, action }: { icon?: IconName; title: string; children: ReactNode; action?: ReactNode }) {
   return <div className="empty-state"><span className="empty-icon"><Icon name={icon} size={28} /></span><h3>{title}</h3><p>{children}</p>{action}</div>;
+}
+
+export function PageHeading({ title, icon, hint, action }: { title: string; icon: IconName; hint?: string; action?: ReactNode }) {
+  return <div className="page-heading compact-heading"><span className="heading-symbol"><Icon name={icon} size={21} /></span><div><h1>{title}</h1>{hint && <p>{hint}</p>}</div>{action && <div className="heading-action">{action}</div>}</div>;
+}
+
+export function usePagedList<T>(items: T[], size: number, resetKey: string | number) {
+  const [index, setPage] = useState(0);
+  useEffect(() => setPage(0), [resetKey]);
+  const pages = Math.max(1, Math.ceil(items.length / size));
+  const page = Math.min(index, pages - 1);
+  return { items: items.slice(page * size, (page + 1) * size), page, pages, setPage };
+}
+
+export function PageControls({ page, pages, onChange, busy = false, hasMore = false, label = 'Sahifalar' }: { page: number; pages: number; onChange(page: number): void; busy?: boolean; hasMore?: boolean; label?: string }) {
+  if (pages <= 1 && !hasMore) return null;
+  return <nav className="page-controls" aria-label={label}><button className="secondary" disabled={busy || page === 0} onClick={() => onChange(page - 1)}><Icon name="back" size={16} />Oldingi</button><span aria-live="polite">{page + 1}-sahifa</span><button className="secondary" disabled={busy || (page >= pages - 1 && !hasMore)} onClick={() => onChange(page + 1)}>Keyingi<Icon name="arrow" size={16} /></button></nav>;
 }
 
 export function Loading({ label = 'Yuklanmoqda…' }: { label?: string }) {
@@ -108,7 +126,7 @@ export function ConfirmationProvider({ children }: { children: ReactNode }) {
   useEffect(() => () => pending.current?.(false), []);
   function settle(value: boolean) { dialog.current?.close(); pending.current?.(value); pending.current = null; setOptions(null); }
   function confirm(value: Confirmation) { pending.current?.(false); setOptions(value); return new Promise<boolean>(resolve => { pending.current = resolve; }); }
-  return <ConfirmationContext.Provider value={confirm}>{children}<dialog ref={dialog} className="modal" aria-labelledby="confirmation-title" aria-describedby="confirmation-description" onCancel={event => { event.preventDefault(); settle(false); }}>
+  return <ConfirmationContext.Provider value={confirm}>{children}<dialog ref={dialog} className="modal compact-dialog" aria-labelledby="confirmation-title" aria-describedby="confirmation-description" onCancel={event => { event.preventDefault(); settle(false); }}>
     {options && <><span className={'modal-icon ' + (options.danger ? 'destructive' : '')}><Icon name={options.danger ? 'help' : 'shield'} size={26} /></span><h2 id="confirmation-title">{options.title}</h2><p id="confirmation-description">{options.description}</p><div className="actions"><button className="secondary" autoFocus onClick={() => settle(false)}>Bekor qilish</button><button className={options.danger ? 'danger-solid' : ''} onClick={() => settle(true)}>{options.action || 'Tasdiqlash'}<Icon name="arrow" size={18} /></button></div></>}
   </dialog></ConfirmationContext.Provider>;
 }
@@ -116,5 +134,5 @@ export function ConfirmationProvider({ children }: { children: ReactNode }) {
 export function Guide({ open, close }: { open: boolean; close(): void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => { if (open) dialog.current?.showModal(); else dialog.current?.close(); }, [open]);
-  return <dialog ref={dialog} className="modal guide-modal" aria-labelledby="guide-title" onCancel={event => { event.preventDefault(); close(); }}><div className="section-heading"><span className="eyebrow">BASIRAT YORDAM</span><button className="icon-button" aria-label="Yordamni yopish" onClick={close}><Icon name="close" /></button></div><h2 id="guide-title">Hammasi oddiy.</h2><ol className="guide-steps"><li><span>01</span><div><h3>Katalogdan test tanlang</h3><p>Test yoki o‘qituvchi nomini qidiring, yoki sizga yuborilgan havolani oching.</p></div></li><li><span>02</span><div><h3>Savollarga javob bering</h3><p>Javoblar avtomatik saqlanadi. Topshirishdan oldin ularni tekshirib chiqing.</p></div></li><li><span>03</span><div><h3>Natijangizni kuzating</h3><p>To‘g‘ri va noto‘g‘ri javoblar ko‘rinadi. Ochiq javoblar tekshirilishi kutilishi mumkin. Ball va o‘rin test yakunlangach ochiladi.</p></div></li></ol><div className="help-note"><Icon name="upload" /><p>O‘qituvchimisiz? Profil yoki hisob menyusidan O‘qituvchi kabinetiga kiring. PDF yoki rasmlarni yuklang, AI ajratgan savollarni tekshirib, testni nashr qiling.</p></div><button className="full-width" onClick={close}>Tushunarli<Icon name="check" size={18} /></button></dialog>;
+  return <dialog ref={dialog} className="modal guide-modal compact-dialog" aria-labelledby="guide-title" onCancel={event => { event.preventDefault(); close(); }}><div className="section-heading"><span className="eyebrow">BASIRAT YORDAM</span><button className="icon-button" aria-label="Yordamni yopish" onClick={close}><Icon name="close" /></button></div><h2 id="guide-title">Qisqa qo‘llanma</h2><ol className="guide-steps"><li><span>01</span><div><h3>Katalogdan test tanlang</h3><p>Testni qidiring yoki ustoz yuborgan havolani oching.</p></div></li><li><span>02</span><div><h3>Savollarga javob bering</h3><p>Javoblar saqlanadi. Vaqtli testlarda soat to‘xtamaydi.</p></div></li><li><span>03</span><div><h3>Natijangizni kuzating</h3><p>Javoblar topshirgach, ball va o‘rin test yakunlangach ko‘rinadi.</p></div></li></ol><div className="help-note"><Icon name="upload" /><p>O‘qituvchi kabinetida PDF yoki rasmlarni yuklang. Nashrdan oldin savol va javoblarni tekshiring.</p></div><button className="full-width" onClick={close}>Tushunarli<Icon name="check" size={18} /></button></dialog>;
 }

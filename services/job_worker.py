@@ -19,6 +19,8 @@ async def recover_jobs():
     # Deployment runs one application instance; no second polling/worker replica.
     async with get_db_connection() as db:
         await db.execute("UPDATE jobs SET status = 'queued' WHERE status = 'running'")
+        # Expiry must survive old retry exhaustion, even if the student never returns.
+        await db.execute("UPDATE jobs SET status = 'queued', attempts = 0, available_at = 0 WHERE kind = 'expire' AND status = 'failed'")
         await db.commit()
 
 
@@ -130,8 +132,8 @@ async def execute_job(job, bot=None):
         message = str(error)[:500] if isinstance(error, (AIUnavailable, PlatformError)) else "Amal bajarilmadi. Qayta urinib ko'ring yoki administratorga murojaat qiling."
         logger.warning("Job %s (%s) failed: %s", job["id"], job["kind"], type(error).__name__)
         rate_limited = isinstance(error, TelegramRetryAfter)
-        failed = job["attempts"] >= 3 and not rate_limited
-        delay = error.retry_after + 1 if rate_limited else min(300, 10 ** job["attempts"])
+        failed = job["attempts"] >= 3 and not rate_limited and job["kind"] != "expire"
+        delay = error.retry_after + 1 if rate_limited else min(300, 10 ** min(job["attempts"], 3))
         async with get_db_connection() as db:
             await db.execute("UPDATE jobs SET status = ?, error = ?, available_at = ? WHERE id = ? AND status != 'done'",
                              ("failed" if failed else "queued", message, time.time() + delay, job["id"]))

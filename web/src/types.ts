@@ -36,8 +36,20 @@ export type Results = {
   questions: { question_num: number; correct_count: number; assigned_points: number | null; assigned_tier: string | null }[];
 };
 
+export type InvoiceStatus = 'paid' | 'cancelled' | 'failed' | 'pending';
+export type PaymentOrder = {
+  id: string; amount: number; currency: 'XTR'; purpose: string; environment: 'test' | 'live';
+  created_at: number; expires_at: number; invoice_url: string | null;
+  status: 'created' | 'invoice_ready' | 'invoice_failed' | 'checkout' | 'paid' | 'refund_pending' | 'refunded' | 'expired';
+};
+export type PaymentHistory = {
+  settings: { enabled: boolean; environment: 'test' | 'live'; amount: number; currency: 'XTR'; terms_version: string; terms_text: string; support_url: string | null };
+  orders: PaymentOrder[];
+  additional_payments: { amount: number; status: string; received_at: number }[];
+};
+
 declare global {
   interface Window {
-    Telegram?: { WebApp: { initData: string; ready(): void; expand(): void; close(): void; openTelegramLink(url: string): void; enableClosingConfirmation(): void; disableClosingConfirmation(): void; setHeaderColor?(color: string): void; setBackgroundColor?(color: string): void; BackButton?: { show(): void; hide(): void; onClick(callback: () => void): void; offClick(callback: () => void): void }; initDataUnsafe?: { start_param?: string } } };
+    Telegram?: { WebApp: { initData: string; ready(): void; expand(): void; close(): void; openTelegramLink(url: string): void; openInvoice?(url: string, callback?: (status: InvoiceStatus) => void): void; enableClosingConfirmation(): void; disableClosingConfirmation(): void; setHeaderColor?(color: string): void; setBackgroundColor?(color: string): void; BackButton?: { show(): void; hide(): void; onClick(callback: () => void): void; offClick(callback: () => void): void }; initDataUnsafe?: { start_param?: string } } };
   }
 }

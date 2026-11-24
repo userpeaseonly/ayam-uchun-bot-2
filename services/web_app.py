@@ -6,6 +6,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from aiohttp import web
+from aiogram import Bot
 from pydantic import ValidationError
 
 import config
@@ -13,26 +14,32 @@ from scripts.database.db import get_db_connection
 from services import platform_service as platform
 from services import catalog_service as catalog
 from services import access_policy
+from services import stars_payments as stars
+from services import web_payments, browser_auth, click_payments, payme_payments
 from services.import_service import media_file
 from services.upload_service import store_source, start_collection
-from services.telegram_auth import verify_init_data, make_session, read_session
+from services.telegram_auth import verify_init_data, make_session, read_session_context
 
 logger = logging.getLogger(__name__)
 USER_KEY = web.RequestKey("identity", dict)
 BOT_USERNAME_KEY = web.AppKey("bot_username", str)
+PAYMENT_BOT_KEY = web.AppKey("payment_bot", Bot)
+AUDIENCE_KEY = web.RequestKey("session_audience", str)
 
 
 @web.middleware
 async def security(request, handler):
     try:
         if request.path.startswith("/api/"):
-            if request.method not in ("GET", "HEAD", "OPTIONS") and request.headers.get("Origin"):
-                configured = urlsplit(config.MINI_APP_URL)
-                allowed = f"{configured.scheme}://{configured.netloc}" if configured.netloc else f"{request.scheme}://{request.host}"
-                if request.headers["Origin"] != allowed:
+            provider_callback = request.path.startswith('/api/providers/')
+            if not provider_callback and request.method not in ("GET", "HEAD", "OPTIONS") and request.headers.get("Origin"):
+                configured = [urlsplit(url) for url in (config.MINI_APP_URL, config.BROWSER_APP_URL) if url]
+                allowed = {f"{url.scheme}://{url.netloc}" for url in configured} or {f"{request.scheme}://{request.host}"}
+                if request.headers["Origin"] not in allowed:
                     raise platform.PlatformError("Noto'g'ri so'rov manbasi.", 403)
-            if request.path != "/api/session":
-                request[USER_KEY] = read_session(request.cookies.get("ayam_session", ""))
+            if not provider_callback and request.path not in ("/api/session", "/api/browser-config", "/api/browser-login"):
+                context = read_session_context(request.cookies.get("ayam_session", ""))
+                request[USER_KEY], request[AUDIENCE_KEY] = context['user'], context['audience']
         response = await handler(request)
     except platform.PlatformError as error:
         response = web.json_response({"error": str(error)}, status=error.status)
@@ -68,7 +75,7 @@ async def body(request):
 async def session(request):
     data = await body(request)
     identity = verify_init_data(data.get("init_data"))
-    response = web.json_response(await identity_payload(request, identity))
+    response = web.json_response(await identity_payload(request, identity, audience='telegram'))
     response.set_cookie("ayam_session", make_session(identity), httponly=True,
                         secure=config.MINI_APP_URL.startswith("https://"), samesite="Strict", max_age=12 * 3600, path="/")
     return response
@@ -78,11 +85,107 @@ async def me(request):
     return web.json_response(await identity_payload(request, user(request)))
 
 
-async def identity_payload(request, identity):
+async def identity_payload(request, identity, audience=None):
     username = request.app.get(BOT_USERNAME_KEY)
-    return {"user": identity, "is_admin": identity["id"] in config.ADMIN_IDS, "can_teach": True,
+    return {"user": identity, "session_audience": audience or request.get(AUDIENCE_KEY, 'telegram'),
+            "is_admin": identity["id"] in config.ADMIN_IDS, "can_teach": True,
             "profile": await catalog.profile(identity["id"]),
+            "show_payments": await stars.visible(identity["id"]),
+            "show_web_payments": await web_payments.visible(identity['id']),
             "bot_import_url": f"https://t.me/{username}?start=import" if username else None}
+
+
+async def browser_config(request):
+    try:
+        web_payments.browser_url()
+        enabled = bool(request.app.get(BOT_USERNAME_KEY))
+    except platform.PlatformError:
+        enabled = False
+    return web.json_response({'enabled': enabled})
+
+
+async def browser_login(request):
+    if request.method == 'POST':
+        details, cookie = await browser_auth.create_login(request.app.get(BOT_USERNAME_KEY))
+        response = web.json_response(details)
+        response.set_cookie('browser_login', cookie, httponly=True, secure=config.BROWSER_APP_URL.startswith('https://'), samesite='Strict', max_age=300, path='/api/browser-login')
+        return response
+    identity = await browser_auth.consume(request.cookies.get('browser_login'))
+    if not identity:
+        return web.json_response({'pending': True})
+    response = web.json_response({'pending': False, 'identity': await identity_payload(request, identity, audience='browser')})
+    response.set_cookie('ayam_session', make_session(identity, audience='browser'), httponly=True,
+                        secure=config.BROWSER_APP_URL.startswith('https://'), samesite='Strict', max_age=12 * 3600, path='/')
+    response.del_cookie('browser_login', path='/api/browser-login')
+    return response
+
+
+def require_browser(request):
+    if request.get(AUDIENCE_KEY) != 'browser':
+        raise platform.PlatformError('Bu to‘lov faqat mustaqil brauzer sayti uchun.', 403)
+
+
+async def web_payment_history(request):
+    require_browser(request)
+    return web.json_response(await web_payments.history(user(request)['id']))
+
+
+async def web_payment_create(request):
+    require_browser(request)
+    data = await body(request)
+    return web.json_response(await web_payments.create_order(user(request)['id'], data.get('provider'),
+        data.get('request_key'), data.get('terms_version'), data.get('accepted_terms')))
+
+
+async def web_payment_order(request):
+    require_browser(request)
+    return web.json_response(web_payments.public_order(await web_payments.owned_order(request.match_info['order_id'], user(request)['id']), checkout=True))
+
+
+async def callback_body(request, limit):
+    content = bytearray()
+    async for chunk in request.content.iter_chunked(4096):
+        content.extend(chunk)
+        if len(content) > limit:
+            raise ValueError('Callback too large')
+    return bytes(content)
+
+
+async def click_callback(request):
+    try:
+        if request.content_type != 'application/x-www-form-urlencoded' or request.content_length and request.content_length > 16000:
+            return web.json_response({'error': -8, 'error_note': 'Invalid request'})
+        from urllib.parse import parse_qsl
+        raw = await callback_body(request, 16000)
+        pairs = parse_qsl(raw.decode(), keep_blank_values=True, strict_parsing=True)
+        if len(dict(pairs)) != len(pairs):
+            raise ValueError('Duplicate fields')
+        data = await click_payments.process(request.match_info['environment'], dict(pairs), 0 if request.match_info['action'] == 'prepare' else 1)
+        return web.json_response(data)
+    except (ValueError, UnicodeDecodeError):
+        return web.json_response({'error': -8, 'error_note': 'Invalid request'})
+    except Exception as error:
+        logger.warning('Click callback deferred: %s', type(error).__name__)
+        return web.json_response({'error': -7, 'error_note': 'Temporary merchant error'})
+
+
+async def payme_callback(request):
+    request_id = None
+    try:
+        raw = await callback_body(request, 32000)
+        try:
+            data = json.loads(raw)
+        except (ValueError, UnicodeDecodeError):
+            return web.json_response(payme_payments.error_response(None, -32700, 'Invalid JSON'))
+        request_id = data.get('id') if isinstance(data, dict) else None
+        return web.json_response(await payme_payments.process(request.match_info['environment'], request.headers.get('Authorization'), data))
+    except payme_payments.RpcError as error:
+        return web.json_response(payme_payments.error_response(request_id, error.code, error.message, error.data))
+    except ValueError:
+        return web.json_response(payme_payments.error_response(None, -32600, 'Invalid request'))
+    except Exception as error:
+        logger.warning('Payme callback deferred: %s', type(error).__name__)
+        return web.json_response(payme_payments.error_response(request_id, -32400, 'Temporary merchant error'))
 
 
 async def imports(request):
@@ -275,7 +378,8 @@ async def discover(request):
     if scope not in ("public", "drafts", "results"):
         raise platform.PlatformError("Noma’lum bo‘lim.")
     page = await catalog.list_tests(user(request)["id"], scope=scope, query=request.query.get("q", ""),
-        subject=request.query.get("subject", ""), before=int(request.query["before"]) if "before" in request.query else None)
+        subject=request.query.get("subject", ""), before=int(request.query["before"]) if "before" in request.query else None,
+        limit=int(request.query.get("limit", "24")))
     decorate(request, page["items"])
     return web.json_response(page)
 
@@ -288,6 +392,27 @@ async def introduction(request):
     result["access"] = access_policy.access_details(test, user(request)["id"])
     decorate(request, [result])
     return web.json_response(result)
+
+
+async def payment_history(request):
+    return web.json_response(await stars.history(user(request)["id"]))
+
+
+async def create_payment(request):
+    data = await body(request)
+    bot = request.app.get(PAYMENT_BOT_KEY)
+    if bot is None:
+        raise platform.PlatformError("To‘lov xizmati hali ulanmagan.", 503)
+    return web.json_response(await stars.create_test_order(user(request)["id"], data.get("request_key"),
+        data.get("terms_version"), data.get("accepted_terms"), bot))
+
+
+async def payment_order(request):
+    return web.json_response(stars.public_order(await stars.owned_order(request.match_info["order_id"], user(request)["id"])))
+
+
+async def refund_payment(request):
+    return web.json_response(await stars.request_refund(request.match_info["order_id"], user(request)["id"]))
 
 
 async def index(request):
@@ -304,7 +429,17 @@ async def index(request):
 def create_web_app():
     app = web.Application(middlewares=[security], client_max_size=config.MAX_UPLOAD_BYTES + 1024 * 1024)
     app.add_routes([
+        web.get('/api/browser-config', browser_config),
+        web.post('/api/browser-login', browser_login), web.get('/api/browser-login', browser_login),
+        web.get('/api/web-payments', web_payment_history), web.post('/api/web-payments/test', web_payment_create),
+        web.get('/api/web-payments/orders/{order_id}', web_payment_order),
+        web.post('/api/providers/click/{environment:test|live}/{action:prepare|complete}', click_callback),
+        web.post('/api/providers/payme/{environment:test|live}', payme_callback),
         web.post("/api/session", session), web.get("/api/me", me),
+        web.get("/api/payments", payment_history),
+        web.post("/api/payments/stars/test", create_payment),
+        web.get("/api/payments/orders/{order_id}", payment_order),
+        web.post("/api/payments/orders/{order_id}/refund", refund_payment),
         web.put("/api/profile", publisher_profile), web.get("/api/catalog", discover),
         web.get("/api/tests/{code}/intro", introduction),
         web.get("/api/admin/imports", imports), web.post("/api/admin/imports", imports),

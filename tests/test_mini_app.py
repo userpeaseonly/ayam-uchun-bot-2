@@ -93,7 +93,7 @@ async def test_migration_is_repeatable_and_preserves_existing_data(platform_db):
     await init_db()
     assert (await get_test_by_id(test["id"]))["code"] == test["code"]
     async with get_db_connection() as db:
-        assert (await platform.one(db, "SELECT COUNT(*) AS n FROM schema_migrations"))["n"] == 4
+        assert (await platform.one(db, "SELECT COUNT(*) AS n FROM schema_migrations"))["n"] == 6
 
 
 @pytest.mark.asyncio

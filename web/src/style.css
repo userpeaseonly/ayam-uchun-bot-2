@@ -225,7 +225,8 @@ h1 { overflow-wrap: anywhere; }
 .catalog-subject select { min-width: 150px; }
 .catalog-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 button.catalog-card { display: block; text-align: left; width: 100%; color: inherit; background: white; font-weight: 400; padding: 24px; border: 1px solid #eadfe5; border-radius: 20px; min-width: 0; transition: border-color .15s, box-shadow .15s; }
-button.catalog-card:hover { border-color: #ae7b99; box-shadow: 0 8px 25px #571f3f0a; transform: none; }
+/* Touch browsers may retain hover after a tap; keep the card's text readable. */
+button.catalog-card:hover:not(:disabled) { background: var(--paper); border-color: #ae7b99; box-shadow: 0 8px 25px #571f3f0a; transform: none; }
 .catalog-card h2 { margin: 20px 0 14px; font-size: 22px; line-height: 1.35; overflow-wrap: anywhere; }
 .catalog-subject-tag { font-size: 12px; padding: 5px 9px; border-radius: 7px; background: #f6edf2; color: #571f3f; overflow-wrap: anywhere; }
 .publisher-name { display: flex; align-items: center; gap: 9px; color: #571f3f; font-size: 15px; overflow-wrap: anywhere; }

@@ -312,3 +312,31 @@ async def test_new_legacy_test_keeps_a_working_bot_share_link(public_db):
     assert message.answer.await_count == 1
     assert 'bitta xabarda' in message.answer.await_args.args[0]
     assert not (await catalog.list_tests(10))['items']
+
+
+@pytest.mark.asyncio
+async def test_compact_catalog_pages_search_and_validate_page_size(public_db):
+    existing = [await publish() for _ in range(5)]
+    await publish(9002, visibility='unlisted', name='Aziz Rahimov')
+    async with TestClient(TestServer(create_web_app())) as client:
+        client.session.cookie_jar.update_cookies({'ayam_session': make_session({'id': 10})})
+        first = await (await client.get('/api/catalog?limit=2')).json()
+        assert [test['id'] for test in first['items']] == [existing[4]['id'], existing[3]['id']]
+        added = await publish()
+        second = await (await client.get('/api/catalog', params={'limit': 2, 'before': first['next_cursor']})).json()
+        third = await (await client.get('/api/catalog', params={'limit': 2, 'before': second['next_cursor']})).json()
+        all_items = first['items'] + second['items'] + third['items']
+        assert [test['id'] for test in all_items] == [test['id'] for test in reversed(existing)]
+        assert third['next_cursor'] is None
+        assert all(test['visibility'] == 'public' and test['publisher_name'] == 'Dilnoza Karimova' for test in all_items)
+        refreshed = await (await client.get('/api/catalog?limit=2')).json()
+        assert refreshed['items'][0]['id'] == added['id']
+        searched = await (await client.get('/api/catalog', params={'limit': 2, 'q': 'Karimova'})).json()
+        assert len(searched['items']) == 2 and searched['next_cursor']
+        hidden = await (await client.get('/api/catalog', params={'limit': 2, 'q': 'Rahimov'})).json()
+        assert hidden['items'] == []
+        for limit in ['0', '25', '-1', 'hello', '1.5', 'true']:
+            assert (await client.get('/api/catalog', params={'limit': limit})).status == 400
+    for limit in [True, False, None, 2.5, '2']:
+        with pytest.raises(platform.PlatformError):
+            await catalog.list_tests(10, limit=limit)

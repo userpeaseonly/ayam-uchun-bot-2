@@ -7,10 +7,10 @@ logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def get_db_connection(db_path=None):
-    async with aiosqlite.connect(db_path if db_path is not None else config.DB_PATH, timeout=60.0) as db:
+async def get_db_connection(db_path=None, *, timeout=60.0):
+    async with aiosqlite.connect(db_path if db_path is not None else config.DB_PATH, timeout=timeout) as db:
         for statement in (
-            "PRAGMA busy_timeout = 60000;",
+            f"PRAGMA busy_timeout = {max(0, int(timeout * 1000))};",
             "PRAGMA foreign_keys = ON;",
             "PRAGMA journal_mode = WAL;",
         ):

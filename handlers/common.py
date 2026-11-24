@@ -17,7 +17,15 @@ async def cmd_start(message: Message, state: FSMContext):
         await prompt_import(message, state)
         return
     await state.clear()
+    if (message.text or "").split(maxsplit=1)[-1] in ("payterms", "paysupport"):
+        from handlers.payments import terms, pay_support
+        await (terms(message) if message.text.endswith("payterms") else pay_support(message))
+        return
     argument = (message.text or "").split(maxsplit=1)
+    if len(argument) == 2 and argument[1].startswith("web_"):
+        from handlers.browser_auth import prompt
+        await prompt(message, argument[1][4:])
+        return
     if len(argument) == 2 and argument[1].startswith("t_"):
         from services.platform_service import load_test, PlatformError
         try:

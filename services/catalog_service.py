@@ -75,7 +75,9 @@ async def summary(test_id, user_id):
     return result
 
 
-async def list_tests(user_id, *, scope="public", query="", subject="", before=None):
+async def list_tests(user_id, *, scope="public", query="", subject="", before=None, limit=24):
+    if type(limit) is not int or not 1 <= limit <= 24:
+        raise PlatformError("Sahifa hajmi 1–24 oralig‘ida bo‘lishi kerak.")
     query, subject = query.strip()[:150], subject.strip()[:80]
     conditions = ["t.document_json IS NOT NULL", "t.status IN ('active', 'finished')"]
     args = [user_id, user_id, user_id]
@@ -107,9 +109,9 @@ async def list_tests(user_id, *, scope="public", query="", subject="", before=No
         counts = await one(db, """SELECT COUNT(*) AS total, COALESCE(SUM(status = 'active'), 0) AS active,
             (SELECT COUNT(*) FROM imports WHERE owner_id = ? AND status = 'review') AS review
             FROM tests WHERE created_by = ?""", (user_id, user_id)) if scope == 'teacher' else None
-        result = await rows(db, SUMMARY_SQL + " WHERE " + " AND ".join(conditions) + " ORDER BY t.id DESC LIMIT 25", args)
+        result = await rows(db, SUMMARY_SQL + " WHERE " + " AND ".join(conditions) + " ORDER BY t.id DESC LIMIT ?", [*args, limit + 1])
         subjects = await rows(db, "SELECT DISTINCT subject FROM tests WHERE visibility = 'public' AND status = 'active' AND document_json IS NOT NULL AND subject != '' ORDER BY subject LIMIT 100")
-    return {"items": result[:24], "next_cursor": result[23]["id"] if len(result) > 24 else None,
+    return {"items": result[:limit], "next_cursor": result[limit - 1]["id"] if len(result) > limit else None,
             "subjects": [item["subject"] for item in subjects], **({"counts": counts} if counts is not None else {})}
 
 

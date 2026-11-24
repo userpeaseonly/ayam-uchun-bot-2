@@ -261,3 +261,68 @@ async def test_started_test_is_resumable_before_any_answer_is_saved(timer_db):
     await timers.expire_attempt(test['id'], 10)
     assert not (await catalog.list_tests(10, scope='drafts'))['items']
     assert (await catalog.list_tests(10, scope='results'))['items'][0]['submission_id']
+
+
+@pytest.mark.asyncio
+async def test_closed_app_restart_expires_timed_test_but_keeps_untimed_draft(timer_db):
+    timed = await publish(1)
+    untimed = await publish(None)
+    for test in (timed, untimed):
+        await timers.start_attempt(test['id'], {'id': 10})
+        await platform.save_draft(test['id'], 10, {'1': 'A'}, 0)
+    timer_db.value += 7 * 86400
+    async with get_db_connection() as db:
+        # Recover a timer abandoned by an older deployment's retry limit.
+        await db.execute("UPDATE jobs SET status = 'failed', attempts = 3 WHERE kind = 'expire'")
+        await db.commit()
+    await recover_jobs()
+    job = await claim_job(timers=True)
+    assert job is not None
+    await execute_job(job)  # No student request is needed to trigger submission.
+    timed_result = await platform.submission_result(timed['id'], 10)
+    assert timed_result['auto_submitted'] and timed_result['answers'][0]['correct']
+    assert await platform.submission_result(untimed['id'], 10) is None
+    resumed = await platform.test_for_student(untimed['public_id'], 10)
+    assert resumed['timer'] is None and resumed['draft'] == {'1': 'A'}
+    drafts = await catalog.list_tests(10, scope='drafts')
+    assert [test['id'] for test in drafts['items']] == [untimed['id']]
+    # A timed attempt can never restart after expiry, even through /start.
+    await timers.start_attempt(timed['id'], {'id': 10})
+    reopened = await platform.test_for_student(timed['public_id'], 10)
+    assert reopened['submission']['id'] == timed_result['id']
+    assert reopened['timer']['deadline_at'] < timer_db.value
+
+
+@pytest.mark.asyncio
+async def test_auto_submission_keeps_retrying_after_repeated_temporary_failures(timer_db, monkeypatch):
+    test = await publish()
+    await timers.start_attempt(test['id'], {'id': 10})
+    await platform.save_draft(test['id'], 10, {'1': 'A'}, 0)
+    timer_db.value += 60
+    expire = timers.expire_attempt
+    calls = 0
+
+    async def temporarily_unavailable(test_id, user_id):
+        nonlocal calls
+        calls += 1
+        if calls <= 4:
+            raise OSError('Temporary storage failure')
+        return await expire(test_id, user_id)
+
+    monkeypatch.setattr(timers, 'expire_attempt', temporarily_unavailable)
+    for attempt in range(1, 6):
+        async with get_db_connection() as db:
+            await db.execute("UPDATE jobs SET available_at = 0 WHERE kind = 'expire'")
+            await db.commit()
+        job = await claim_job(timers=True)
+        assert job is not None and job['attempts'] == attempt
+        await execute_job(job)
+        async with get_db_connection() as db:
+            state = await platform.one(db, "SELECT status, available_at FROM jobs WHERE kind = 'expire'")
+        if attempt <= 4:
+            assert state['status'] == 'queued'
+            assert time.time() < state['available_at'] <= time.time() + 300
+        else:
+            assert state['status'] == 'done'
+    result = await platform.submission_result(test['id'], 10)
+    assert result['auto_submitted'] and result['answers'][0]['correct']
