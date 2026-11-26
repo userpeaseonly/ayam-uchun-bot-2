@@ -584,6 +584,13 @@ after 15 minutes. Names/IDs stay local, output is validated and HTML-escaped,
 and last-good tips survive failed refreshes within the process. A separate
 cancellable worker syncs default/Uzbek pre-Start and profile descriptions only
 when changed and retries transient Telegram errors without blocking polling.
+Mini App launchers must use `InlineKeyboardButton.web_app` or `MenuButtonWebApp`:
+reply-keyboard `KeyboardButton.web_app` launches have empty signed identity data.
+`/start` sends the welcome with `ReplyKeyboardRemove`, then attaches inline buttons
+by editing that message's markup, clearing old broken launchers without a duplicate
+greeting. Plain-text menu shortcuts still send inline launchers. Direct website
+visitors are offered the bot link first; browser login codes require choosing the
+separate browser path (or returning from a browser payment).
 
 The preparation stepper stays in four aligned columns, including narrow phones.
 Freshly acknowledged student submissions (manual or automatic) show a brief

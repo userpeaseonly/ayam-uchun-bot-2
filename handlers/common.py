@@ -1,9 +1,9 @@
 from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardRemove
 from aiogram.fsm.context import FSMContext
 from keyboards.reply import get_main_menu_keyboard
-from keyboards.inline import get_mini_app_keyboard
+from keyboards.inline import get_mini_app_keyboard, get_welcome_keyboard
 from html import escape
 from services.bot_branding import welcome_text
 import config
@@ -40,11 +40,16 @@ async def cmd_start(message: Message, state: FSMContext):
         except PlatformError:
             await message.answer("Test topilmadi. Havolani tekshiring.")
         return
-    await message.answer(
+    keyboard = get_welcome_keyboard()
+    welcome = await message.answer(
         welcome_text(message.from_user.first_name, message.from_user.id),
-        reply_markup=get_main_menu_keyboard(message.from_user.id),
+        reply_markup=ReplyKeyboardRemove() if keyboard else get_main_menu_keyboard(message.from_user.id),
         parse_mode="HTML",
     )
+    if keyboard:
+        # Remove previously sent reply-keyboard launchers, then attach inline
+        # buttons to this same welcome message (no duplicate greeting).
+        await welcome.edit_reply_markup(reply_markup=keyboard)
 
 
 @router.message(F.text.in_({"ℹ️ Yordam", "ℹ️ Bot haqida va qo'llanma"}))
@@ -92,3 +97,10 @@ async def cancel_submission(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.edit_text("❌ Test topshirish bekor qilindi.")
     await callback.answer()
+
+
+@router.callback_query(F.data == "basirat_help")
+async def welcome_help(callback: CallbackQuery):
+    await callback.answer()
+    if callback.message:
+        await cmd_help(callback.message)

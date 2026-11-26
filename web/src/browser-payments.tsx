@@ -10,7 +10,11 @@ const errorText = (error: unknown) => error instanceof Error ? error.message : '
 const labels: Record<string, string> = { created: 'To‘lov kutilmoqda', pending: 'Provayder tasdig‘i kutilmoqda', paid: 'To‘langan', cancelled: 'Bekor qilingan', refunded: 'Qaytarilgan', expired: 'Muddati tugagan' };
 const name = (provider: Provider) => provider === 'click' ? 'Click' : 'Payme';
 
-export function BrowserLogin<T>({ completed }: { completed(identity: T): void }) {
+export function BrowserLogin<T>({ completed, botUrl, allowBrowser }: { completed(identity: T): void; botUrl: string | null; allowBrowser: boolean }) {
+  const [browserMode, setBrowserMode] = useState(() => {
+    const params = new URLSearchParams(location.search);
+    return params.has('payment') || params.get('login') === 'browser';
+  });
   const [challenge, setChallenge] = useState<{ code: string; bot_url: string } | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -34,7 +38,8 @@ export function BrowserLogin<T>({ completed }: { completed(identity: T): void })
     void check();
     return () => { active = false; clearTimeout(timer); };
   }, [challenge]);
-  return <><span className="empty-icon"><Icon name="send" size={26} /></span><h1>Hisobga kirish</h1><p>Telegramda tasdiqlang, so‘ng shu oynaga qayting.</p>
+  if (!browserMode || !allowBrowser) return <><span className="empty-icon"><Icon name="send" size={26} /></span><span className="eyebrow">BASIRAT · BILIM SARI BIRGA</span><h1>Telegramda boshlaymiz</h1><p>Botdagi <strong>Basirat testlari</strong> tugmasini bosing. Hisobingiz avtomatik taniladi.</p>{botUrl && <a className="button full-width" href={botUrl} target="_blank" rel="noreferrer">Telegramda ochish<Icon name="send" size={17} /></a>}{allowBrowser && <button className="quiet" onClick={() => setBrowserMode(true)}>Brauzerda davom etish</button>}</>;
+  return <><span className="empty-icon"><Icon name="send" size={26} /></span><h1>Brauzerda kirish</h1><p>Telegramda tasdiqlang, so‘ng shu oynaga qayting.</p>
     {error && <Alert>{error}</Alert>}
     {challenge && <div className="browser-login-code"><span>Tasdiqlash kodi</span><strong>{challenge.code}</strong><p>Botdagi kod shu kod bilan bir xil bo‘lishi kerak.</p><a className="button" href={challenge.bot_url} target="_blank" rel="noreferrer">Telegramda tasdiqlash<Icon name="send" size={17} /></a><p className="muted">Tasdiq kutilmoqda…</p></div>}
     <button disabled={busy} className={challenge ? 'secondary' : ''} onClick={() => void start()}>{busy ? 'Kutilmoqda…' : challenge ? 'Kirishni qayta boshlash' : 'Telegram orqali kirish'}</button>

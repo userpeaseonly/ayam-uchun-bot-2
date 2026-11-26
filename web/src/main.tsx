@@ -46,6 +46,8 @@ const studentPages = [
 function Workspace() {
   const [identity, setIdentity] = useState<{ is_admin: boolean; show_payments: boolean; show_web_payments: boolean; session_audience: 'telegram' | 'browser'; can_teach: boolean; profile: Profile | null; user: { first_name: string; last_name?: string }; bot_import_url?: string | null } | null>(null);
   const [browserLogin, setBrowserLogin] = useState(false);
+  const [browserBotUrl, setBrowserBotUrl] = useState<string | null>(null);
+  const [browserLoginAvailable, setBrowserLoginAvailable] = useState(false);
   const [error, setError] = useState('');
   const [mode, setMode] = useState<'student' | 'teacher'>('student');
   const [page, setPage] = useState<StudentPage>(() => !window.Telegram?.WebApp.initData && new URLSearchParams(location.search).has('payment') ? 'profile' : 'tests');
@@ -86,14 +88,18 @@ function Workspace() {
         else {
           try { result = await api<typeof identity & object>('/me'); }
           catch (error) {
-            const browser = await api<{ enabled: boolean }>('/browser-config');
-            if (browser.enabled) { setBrowserLogin(true); return; }
+            const browser = await api<{ enabled: boolean; bot_url: string | null }>('/browser-config');
+            setBrowserBotUrl(browser.bot_url);
+            setBrowserLoginAvailable(browser.enabled);
+            if (browser.bot_url || browser.enabled) { setBrowserLogin(true); return; }
             throw error;
           }
         }
         if (!telegram?.initData && result.session_audience !== 'browser') {
-          const browser = await api<{ enabled: boolean }>('/browser-config');
-          if (browser.enabled) { setBrowserLogin(true); return; }
+          const browser = await api<{ enabled: boolean; bot_url: string | null }>('/browser-config');
+          setBrowserBotUrl(browser.bot_url);
+          setBrowserLoginAvailable(browser.enabled);
+          if (browser.bot_url || browser.enabled) { setBrowserLogin(true); return; }
         }
         setIdentity(result);
         if (result.can_teach && (linkedImport(location.search) || new URLSearchParams(location.search).get('view') === 'teacher')) setMode('teacher');
@@ -111,7 +117,7 @@ function Workspace() {
     <div className="workspace"><header className="app-header"><div className="mobile-brand"><Brand /></div><span className="desktop-breadcrumb">Basirat<Icon name="chevron" size={14} /><strong>{pageTitle}</strong></span><div className="header-actions">{identity && <details className="account-menu" ref={accountMenu}><summary aria-label="Hisob menyusi"><span className="avatar">{identity.user.first_name.slice(0, 1).toUpperCase()}</span><span className="account-name">{identity.user.first_name}</span><Icon name="chevron" size={15} /></summary><div className="account-dropdown"><strong>{fullName}</strong><button disabled={switching} onClick={() => void navigate('student', 'profile')}><Icon name="users" size={18} />Profil</button>{identity.can_teach && <button disabled={switching} onClick={() => void navigate(mode === 'teacher' ? 'student' : 'teacher', 'tests')}><Icon name={mode === 'teacher' ? 'book' : 'grid'} size={18} />{mode === 'teacher' ? 'Testlarga qaytish' : 'O‘qituvchi kabineti'}</button>}<button onClick={() => { if (accountMenu.current) accountMenu.current.open = false; setGuide(true); }}><Icon name="help" size={18} />Yordam</button></div></details>}</div></header>
       <main id="content" className={'content-main' + (identity && mode === 'student' && page === 'tests' && !focused ? ' catalog-main' : '')}>
         {navigationError && <Alert>{navigationError}</Alert>}
-        {!identity ? <section className="card auth-card">{browserLogin ? <BrowserLogin completed={setIdentity} /> : error ? <><span className="empty-icon"><Icon name="send" size={30} /></span><span className="eyebrow">BASIRAT TESTLAR</span><h1>Hisobga kirish</h1><p>Telegram botidagi <strong>Testlar</strong> tugmasi orqali kiring.</p><Alert>{error}</Alert><button onClick={() => setLoginAttempt(i => i + 1)}><Icon name="refresh" size={18} />Qayta ulanish</button><button className="quiet" onClick={() => setGuide(true)}>Qanday foydalaniladi?</button></> : <><Loading label="Hisob tekshirilmoqda…" /></>}</section> : mode === 'teacher' && identity.can_teach ? <>
+        {!identity ? <section className="card auth-card">{browserLogin ? <BrowserLogin completed={setIdentity} botUrl={browserBotUrl} allowBrowser={browserLoginAvailable} /> : error ? <><span className="empty-icon"><Icon name="send" size={30} /></span><span className="eyebrow">BASIRAT TESTLAR</span><h1>Testlarga qaytamiz</h1><p>Botdagi <strong>Basirat testlari</strong> tugmasi orqali ilovani qayta oching.</p><Alert>{error}</Alert><button onClick={() => setLoginAttempt(i => i + 1)}><Icon name="refresh" size={18} />Qayta ulanish</button><button className="quiet" onClick={() => setGuide(true)}>Qanday foydalaniladi?</button></> : <><Loading label="Testlar ochilmoqda…" /></>}</section> : mode === 'teacher' && identity.can_teach ? <>
           {!identity.profile && <PublisherProfile prompt profile={identity.profile} suggestedName={fullName} saved={profile => setIdentity({ ...identity, profile })} />}
           <Teacher botImportUrl={identity.bot_import_url} initialImport={entryImport.current} backToStudent={() => void navigate('student', 'tests')} />
         </> : page === 'profile' ? <div className="profile-page">

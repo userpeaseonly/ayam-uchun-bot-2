@@ -337,11 +337,24 @@ async def test_callback_http_auth_without_browser_cookies_and_protocol_errors(me
 
 
 @pytest.mark.asyncio
+async def test_telegram_entry_is_available_without_browser_checkout(merchant_db, monkeypatch):
+    monkeypatch.setattr(config, 'BROWSER_APP_URL', '')
+    app = create_web_app()
+    app[BOT_USERNAME_KEY] = 'ExampleBot'
+    async with TestClient(TestServer(app)) as client:
+        assert await (await client.get('/api/browser-config')).json() == {
+            'enabled': False, 'bot_url': 'https://t.me/ExampleBot?start=app',
+        }
+        assert (await client.get('/api/me')).status == 401
+
+
+@pytest.mark.asyncio
 async def test_browser_login_http_issues_browser_audience_cookie_only_after_approval(merchant_db):
     app = create_web_app()
     app[BOT_USERNAME_KEY] = 'ExampleBot'
     async with TestClient(TestServer(app)) as client:
-        assert (await (await client.get('/api/browser-config')).json())['enabled']
+        entry = await (await client.get('/api/browser-config')).json()
+        assert entry['enabled'] and entry['bot_url'] == 'https://t.me/ExampleBot?start=app'
         response = await client.post('/api/browser-login')
         data = await response.json()
         assert response.cookies['browser_login']['httponly']

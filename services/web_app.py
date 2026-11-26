@@ -101,7 +101,8 @@ async def browser_config(request):
         enabled = bool(request.app.get(BOT_USERNAME_KEY))
     except platform.PlatformError:
         enabled = False
-    return web.json_response({'enabled': enabled})
+    username = request.app.get(BOT_USERNAME_KEY)
+    return web.json_response({'enabled': enabled, 'bot_url': f'https://t.me/{username}?start=app' if username else None})
 
 
 async def browser_login(request):

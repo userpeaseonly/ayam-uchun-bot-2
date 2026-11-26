@@ -620,6 +620,12 @@ Caddy obtains and renews HTTPS certificates. If you already have an HTTPS proxy,
 route the domain to `127.0.0.1:8080` instead. Telegram requires HTTPS in production.
 At startup the bot sets its menu button from `MINI_APP_URL`; `/start` also includes
 an Open Mini App button. Configure the same URL in BotFather's Mini App settings.
+Use inline Web App buttons under messages or the bot's menu button for automatic
+Telegram identity. Reply-keyboard Web App buttons do not supply signed `initData`
+and must not launch this app. `/start` removes obsolete reply keyboards and attaches
+authenticated inline student/teacher buttons to the same welcome message. Existing
+text shortcuts return inline buttons. Visitors opening the website directly see
+`Telegramda ochish`; browser confirmation is an optional, separate path.
 Basirat's pre-Start welcome description and short profile description are synced
 in the background for the default language and Uzbek. Existing matching text is
 left alone; temporary Telegram failures retry without stopping polling. Edit the

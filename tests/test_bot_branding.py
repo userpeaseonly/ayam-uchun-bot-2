@@ -8,6 +8,7 @@ from aiogram.methods import GetMyDescription
 
 import config
 from handlers.common import cmd_start
+from keyboards.reply import get_main_menu_keyboard
 from services import bot_branding as branding
 from services.deepseek_client import AIUnavailable
 
@@ -35,7 +36,12 @@ async def test_welcome_100_students_never_wait_for_ai_and_escape_names(welcome_a
         text = message.answer.await_args.args[0]
         assert "Basirat" in text and "Bugungi tavsiya" in text
         assert "Aziza &lt;b&gt;&amp;" in text
-        assert message.answer.await_args.kwargs["reply_markup"].keyboard[0][0].web_app.url == config.MINI_APP_URL
+        assert message.answer.await_args.kwargs["reply_markup"].remove_keyboard is True
+        sent = message.answer.return_value
+        sent.edit_reply_markup.assert_awaited_once()
+        buttons = sent.edit_reply_markup.await_args.kwargs["reply_markup"].inline_keyboard
+        assert buttons[0][0].web_app.url == config.MINI_APP_URL
+        assert "view=teacher" in buttons[1][0].web_app.url
     model.assert_not_awaited()
 
 
@@ -146,3 +152,8 @@ def test_bot_only_welcome_and_all_dynamic_text_is_escaped(welcome_ai, monkeypatc
     text = branding.welcome_text("Ali", 1)
     assert "&lt;img src=x&gt;" in text and "A &amp; B" in text
     assert "test kodini" in text
+
+
+def test_reply_menu_never_launches_web_apps_without_login_identity(welcome_ai):
+    keyboard = get_main_menu_keyboard(123)
+    assert all(button.web_app is None for row in keyboard.keyboard for button in row)

@@ -28,6 +28,14 @@ def get_mini_app_keyboard(code="", *, import_id="", teacher=False):
     )]])
 
 
+def get_welcome_keyboard():
+    keyboard = get_mini_app_keyboard()
+    if keyboard:
+        keyboard.inline_keyboard.extend(get_mini_app_keyboard(teacher=True).inline_keyboard)
+        keyboard.inline_keyboard.append([InlineKeyboardButton(text="ℹ️ Yordam", callback_data="basirat_help")])
+    return keyboard
+
+
 def get_submission_confirm_keyboard(test_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
