@@ -31,8 +31,12 @@ def get_mini_app_keyboard(code="", *, import_id="", teacher=False):
 def get_welcome_keyboard():
     keyboard = get_mini_app_keyboard()
     if keyboard:
-        keyboard.inline_keyboard.extend(get_mini_app_keyboard(teacher=True).inline_keyboard)
-        keyboard.inline_keyboard.append([InlineKeyboardButton(text="ℹ️ Yordam", callback_data="basirat_help")])
+        keyboard.inline_keyboard[0][0].text = "📚 Testlarni ochish"
+        teacher_button = get_mini_app_keyboard(teacher=True).inline_keyboard[0][0]
+        keyboard.inline_keyboard.append([
+            teacher_button,
+            InlineKeyboardButton(text="ℹ️ Yordam", callback_data="basirat_help"),
+        ])
     return keyboard
 
 

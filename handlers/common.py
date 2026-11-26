@@ -1,6 +1,6 @@
 from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, CallbackQuery, ReplyKeyboardRemove
+from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from keyboards.reply import get_main_menu_keyboard
 from keyboards.inline import get_mini_app_keyboard, get_welcome_keyboard
@@ -41,15 +41,13 @@ async def cmd_start(message: Message, state: FSMContext):
             await message.answer("Test topilmadi. Havolani tekshiring.")
         return
     keyboard = get_welcome_keyboard()
-    welcome = await message.answer(
+    # Send inline launch buttons with the greeting itself. Telegram cannot edit
+    # a message originally sent with ReplyKeyboardRemove to add these later.
+    await message.answer(
         welcome_text(message.from_user.first_name, message.from_user.id),
-        reply_markup=ReplyKeyboardRemove() if keyboard else get_main_menu_keyboard(message.from_user.id),
+        reply_markup=keyboard if keyboard else get_main_menu_keyboard(message.from_user.id),
         parse_mode="HTML",
     )
-    if keyboard:
-        # Remove previously sent reply-keyboard launchers, then attach inline
-        # buttons to this same welcome message (no duplicate greeting).
-        await welcome.edit_reply_markup(reply_markup=keyboard)
 
 
 @router.message(F.text.in_({"ℹ️ Yordam", "ℹ️ Bot haqida va qo'llanma"}))

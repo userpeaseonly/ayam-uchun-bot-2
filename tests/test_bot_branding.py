@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 from aiogram.exceptions import TelegramNetworkError
 from aiogram.methods import GetMyDescription
+from aiogram.types import InlineKeyboardMarkup
 
 import config
 from handlers.common import cmd_start
@@ -36,12 +37,16 @@ async def test_welcome_100_students_never_wait_for_ai_and_escape_names(welcome_a
         text = message.answer.await_args.args[0]
         assert "Basirat" in text and "Bugungi tavsiya" in text
         assert "Aziza &lt;b&gt;&amp;" in text
-        assert message.answer.await_args.kwargs["reply_markup"].remove_keyboard is True
-        sent = message.answer.return_value
-        sent.edit_reply_markup.assert_awaited_once()
-        buttons = sent.edit_reply_markup.await_args.kwargs["reply_markup"].inline_keyboard
+        # Telegram rejects editing a greeting sent with ReplyKeyboardRemove.
+        # All launch buttons must already be attached to the initial send.
+        keyboard = message.answer.await_args.kwargs["reply_markup"]
+        assert isinstance(keyboard, InlineKeyboardMarkup)
+        message.answer.return_value.edit_reply_markup.assert_not_awaited()
+        buttons = keyboard.inline_keyboard
+        assert [len(row) for row in buttons] == [1, 2]
         assert buttons[0][0].web_app.url == config.MINI_APP_URL
         assert "view=teacher" in buttons[1][0].web_app.url
+        assert buttons[1][1].callback_data == "basirat_help"
     model.assert_not_awaited()
 
 

@@ -94,7 +94,7 @@ welcome_suggestions = WelcomeSuggestions()
 
 
 def welcome_text(first_name, user_id):
-    action = ("<b>📚 Basirat testlari</b> tugmasini bosing va navbatdagi sinovni boshlang."
+    action = ("Boshlash uchun quyidagi <b>📚 Testlarni ochish</b> tugmasini bosing."
               if config.MINI_APP_URL else
               "<b>✍️ Test topshirish</b> tugmasini bosing yoki ustozingiz bergan test kodini yuboring.")
     return (
