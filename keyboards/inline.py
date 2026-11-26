@@ -3,7 +3,7 @@ import config
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 
-def get_mini_app_keyboard(code="", *, import_id="", teacher=False):
+def get_mini_app_url(code="", *, import_id="", teacher=False):
     if not config.MINI_APP_URL:
         return None
     url = urlsplit(config.MINI_APP_URL)
@@ -14,9 +14,17 @@ def get_mini_app_keyboard(code="", *, import_id="", teacher=False):
         query["view"] = "teacher"
     if import_id:
         query["import"] = import_id
-    target = urlunsplit(url._replace(query=urlencode(query)))
+    return urlunsplit(url._replace(query=urlencode(query)))
+
+
+def get_mini_app_keyboard(code="", *, import_id="", teacher=False):
+    target = get_mini_app_url(code, import_id=import_id, teacher=teacher)
+    if not target:
+        return None
+    label = ("✏️ Testni tayyorlash" if import_id else "👩‍🏫 O‘qituvchi kabineti" if teacher
+             else "📚 Testni ochish" if code else "📚 Basirat testlari")
     return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(
-        text="📚 Basirat testlari", web_app=WebAppInfo(url=target),
+        text=label, web_app=WebAppInfo(url=target),
     )]])
 
 

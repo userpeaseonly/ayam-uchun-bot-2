@@ -23,6 +23,8 @@ DEEPSEEK_IMPORT_MODEL: str = os.getenv("DEEPSEEK_IMPORT_MODEL", "deepseek-flash"
 AI_IMPORT_TIMEOUT: int = int(os.getenv("AI_IMPORT_TIMEOUT", "180"))
 AI_GRADING_TIMEOUT: int = int(os.getenv("AI_GRADING_TIMEOUT", "60"))
 GRADING_CONCURRENCY: int = max(1, min(16, int(os.getenv("GRADING_CONCURRENCY", "8"))))
+# Shared daily study tips; /start never waits for an AI request.
+AI_WELCOME_ENABLED: bool = os.getenv("AI_WELCOME_ENABLED", "true").lower() == "true"
 
 # Gemini settings (optional fallback)
 GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")

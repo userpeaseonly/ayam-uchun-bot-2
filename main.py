@@ -62,13 +62,16 @@ async def main():
         await runner.setup()
         await web.TCPSite(runner, config.WEB_HOST, config.WEB_PORT).start()
         from services.stars_payments import payment_worker
+        from services.bot_branding import branding_worker, welcome_suggestions
         workers = [asyncio.create_task(payment_worker(bot)),
+                   asyncio.create_task(branding_worker(bot)),
+                   asyncio.create_task(welcome_suggestions.worker()),
                    asyncio.create_task(worker_loop(bot, imports=True)),
                    asyncio.create_task(worker_loop(bot, timers=True)),
                    *[asyncio.create_task(worker_loop(bot)) for _ in range(config.GRADING_CONCURRENCY)]]
         if config.MINI_APP_URL:
             from aiogram.types import MenuButtonWebApp, WebAppInfo
-            await bot.set_chat_menu_button(menu_button=MenuButtonWebApp(text="Testlar", web_app=WebAppInfo(url=config.MINI_APP_URL)))
+            await bot.set_chat_menu_button(menu_button=MenuButtonWebApp(text="Basirat", web_app=WebAppInfo(url=config.MINI_APP_URL)))
         await bot.delete_webhook(drop_pending_updates=False)
         await dp.start_polling(bot, close_bot_session=False)
     finally:

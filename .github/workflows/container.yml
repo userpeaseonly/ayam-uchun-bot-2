@@ -52,7 +52,7 @@ jobs:
             requirements.txt
             requirements-dev.txt
             requirements.lock
-      - run: sudo apt-get update && sudo apt-get install -y poppler-utils
+      - run: sudo apt-get update && sudo apt-get install -y poppler-utils ffmpeg
       - run: python -m pip install -r requirements-dev.txt
       - run: python -m pytest tests/ -v
       - run: bash -n scripts/deploy.sh

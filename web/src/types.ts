@@ -5,6 +5,7 @@ export type Question = {
   options: { label: string; text: string }[]; passage_id: string | null;
   parts: { id: string; prompt: string }[]; source_pages: number[]; media: Region[];
   answer: string; rubric: string; accepted_answers: string[]; points: number;
+  explanation_audio?: string;
   reviewed: boolean; warnings: string[];
 };
 export type TestDocument = { version: 1; title: string; passages: Passage[]; questions: Question[]; warnings: string[] };
@@ -21,7 +22,7 @@ export type TestSummary = { id: number; public_id: string; code: string; title: 
 export type TeacherCounts = { total: number; active: number; review: number };
 export type CatalogPage = { counts?: TeacherCounts; items: TestSummary[]; next_cursor: number | null; subjects: string[] };
 export type Answers = Record<string, string | Record<string, string>>;
-export type Submission = { id: number; auto_submitted?: boolean; answers: { number: number; status: string; correct: boolean | null }[]; score?: number; rank?: number; total_correct?: number };
+export type Submission = { id: number; auto_submitted?: boolean; answers: { number: number; status: string; correct: boolean | null; explanation_audio_url?: string }[]; score?: number; rank?: number; total_correct?: number };
 export type StudentQuestion = Pick<Question, 'number' | 'kind' | 'text' | 'options' | 'passage_id' | 'parts'> & { media: string[] };
 export type AttemptTimer = { started_at: number; deadline_at: number; server_now: number };
 export type StudentTest = {

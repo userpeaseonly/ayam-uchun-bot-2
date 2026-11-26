@@ -55,6 +55,7 @@ class Question(ContentModel):
     answer: str = Field(default="", max_length=10)
     rubric: str = Field(default="", max_length=20000)
     accepted_answers: list[str] = Field(default_factory=list, max_length=50)
+    explanation_audio: str = Field(default="", pattern=r"^(?:[a-f0-9]{32})?$")
     points: float = Field(default=2.5, gt=0, le=100)
     reviewed: bool = False
     warnings: list[str] = Field(default_factory=list, max_length=30)
@@ -71,6 +72,26 @@ class Question(ContentModel):
         if len(labels) != len(set(labels)) or len(parts) != len(set(parts)):
             raise ValueError("Takroriy variant yoki qism belgisi")
         return self
+
+
+    def readiness_errors(self, passage_ids: set[str]) -> list[str]:
+        errors = []
+        if not self.text.strip():
+            errors.append("savol matni bo'sh.")
+        if self.passage_id and self.passage_id not in passage_ids:
+            errors.append("umumiy matn topilmadi.")
+        if self.kind != "open":
+            if len(self.options) < 2 or self.answer not in [o.label for o in self.options]:
+                errors.append("variantlar va to'g'ri javobni kiriting.")
+            if self.parts:
+                errors.append("qismlar faqat ochiq savolda mumkin.")
+            if any(not o.text.strip() for o in self.options) and not self.media:
+                errors.append("bo'sh variantlarga matn yoki rasm kerak.")
+        elif self.options or (not self.rubric.strip() and not self.accepted_answers):
+            errors.append("ochiq savol mezonini kiriting va variantlarni olib tashlang.")
+        if self.parts and not self.rubric.strip():
+            errors.append("barcha qismlar uchun umumiy tekshirish mezoni kerak.")
+        return errors
 
 
 class TestDocument(ContentModel):
@@ -92,23 +113,9 @@ class TestDocument(ContentModel):
             errors.append("Matn identifikatorlari takrorlangan.")
         for q in self.questions:
             prefix = f"{q.number}-savol: "
-            if not q.text.strip():
-                errors.append(prefix + "savol matni bo'sh.")
             if not q.reviewed:
                 errors.append(prefix + "savol va javob mezoni tasdiqlanmagan.")
-            if q.passage_id and q.passage_id not in ids:
-                errors.append(prefix + "umumiy matn topilmadi.")
-            if q.kind != "open":
-                if len(q.options) < 2 or q.answer not in [o.label for o in q.options]:
-                    errors.append(prefix + "variantlar va to'g'ri javobni kiriting.")
-                if q.parts:
-                    errors.append(prefix + "qismlar faqat ochiq savolda mumkin.")
-                if any(not o.text.strip() for o in q.options) and not q.media:
-                    errors.append(prefix + "bo'sh variantlarga matn yoki rasm kerak.")
-            elif q.options or (not q.rubric.strip() and not q.accepted_answers):
-                errors.append(prefix + "ochiq savol mezonini kiriting va variantlarni olib tashlang.")
-            if q.parts and not q.rubric.strip():
-                errors.append(prefix + "barcha qismlar uchun umumiy tekshirish mezoni kerak.")
+            errors.extend(prefix + error for error in q.readiness_errors(set(ids)))
         if not self.title.strip():
             errors.append("Test nomi bo'sh.")
         return errors

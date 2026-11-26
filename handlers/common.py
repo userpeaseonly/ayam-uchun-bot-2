@@ -5,6 +5,7 @@ from aiogram.fsm.context import FSMContext
 from keyboards.reply import get_main_menu_keyboard
 from keyboards.inline import get_mini_app_keyboard
 from html import escape
+from services.bot_branding import welcome_text
 import config
 
 router = Router()
@@ -39,53 +40,35 @@ async def cmd_start(message: Message, state: FSMContext):
         except PlatformError:
             await message.answer("Test topilmadi. Havolani tekshiring.")
         return
-    text = (
-        f"Assalomu alaykum, <b>{escape(message.from_user.first_name)}</b>!\n\n"
-        "<b>Basirat testlar platformasiga xush kelibsiz.</b>\n"
-        "Bilimingizni sinang va natijangizni kuzating.\n\n"
-        "Boshlash uchun quyidagi <b>📚 Basirat testlari</b> tugmasini bosing. "
-        "Katalogdan test tanlang yoki o‘qituvchi ulashgan havolani oching.\n\n"
-        "O‘qituvchilar shu ilovada test tayyorlashi, javoblarni tekshirishi va hisobot olishi mumkin."
-    ) if config.MINI_APP_URL else (
-        f"Assalomu alaykum, <b>{escape(message.from_user.first_name)}</b>!\n\n"
-        "Ushbu bot orqali test topshirishingiz va natijalarni bilib olishingiz mumkin.\n\n"
-        "📌 Test topshirish uchun quyidagi <b>✍️ Test topshirish</b> tugmasini bosing yoki "
-        "o'qituvchi bergan test kodini yuboring."
-    )
     await message.answer(
-        text,
+        welcome_text(message.from_user.first_name, message.from_user.id),
         reply_markup=get_main_menu_keyboard(message.from_user.id),
         parse_mode="HTML",
     )
-    keyboard = get_mini_app_keyboard()
-    if keyboard:
-        await message.answer("<b>Basirat testlar</b>\nSavollar, javoblar va natijalar — bir joyda.", reply_markup=keyboard)
 
 
-@router.message(F.text == "ℹ️ Bot haqida va qo'llanma")
+@router.message(F.text.in_({"ℹ️ Yordam", "ℹ️ Bot haqida va qo'llanma"}))
 @router.message(Command("help"))
 async def cmd_help(message: Message):
     if config.MINI_APP_URL:
         await message.answer(
-            "<b>Basirat · Foydalanish qo‘llanmasi</b>\n\n"
-            "<b>O‘quvchilar uchun</b>\n"
-            "1. <b>📚 Basirat testlari</b> tugmasini yoki bot menyusidagi <b>Testlar</b> tugmasini bosing.\n"
-            "2. Katalogdan test tanlang yoki o‘qituvchi havolasini oching.\n"
-            "3. Variantni tanlang yoki ochiq javobingizni yozing. Javoblar avtomatik saqlanadi.\n"
-            "4. <b>Javoblarim</b> bo‘limida tekshirib, <b>Tasdiqlash va topshirish</b> tugmasini bosing.\n\n"
-            "To‘g‘ri va noto‘g‘ri javoblar topshirgach ko‘rinadi. Ochiq javoblar tekshirilishi kutilishi mumkin. "
-            "Yakuniy ball va reyting o‘qituvchi testni yakunlagach ochiladi.\n\n"
-            "<b>O‘qituvchilar uchun</b>\n"
-            "Ilovadagi <b>O‘qituvchi</b> bo‘limini oching. PDF yoki rasmlarni botga yuboring "
-            "yoki qurilmadan yuklang. Rasmlarni yuborib bo‘lgach, /done yozing. "
-            "AI ajratgan savollar, matnlar va javob mezonlarini tekshiring, so‘ng testni nashr qiling. "
-            "Natijalar test sahifasida yangilanib boradi.\n\n"
-            "<b>Muhim:</b> javoblar bir marta topshiriladi. Tasdiqlashdan oldin tekshirib chiqing.",
+            "<b>Basirat · Yordam</b>\n\n"
+            "📚 <b>Test ishlash</b>\n"
+            "Basirat testlarini oching, test tanlang va javob bering. Javoblar avtomatik saqlanadi. "
+            "Tugatgach, <b>Javoblarim → Tasdiqlash va topshirish</b> tugmasini bosing.\n\n"
+            "⏱ Vaqtli testda soat to‘xtamaydi. Vaqt tugaganda saqlangan javoblar avtomatik topshiriladi.\n"
+            "Ball va o‘rin ustoz testni yakunlagach ochiladi.\n\n"
+            "📎 <b>Test yuklash</b>\n"
+            "PDF yoki rasmlarni shu chatga yuboring. Rasmlarni tugatgach, /done yozing. "
+            "Savollar va to‘g‘ri javoblarni tekshirib, testni nashr qiling.\n\n"
+            "👩‍🏫 <b>O‘qituvchi kabineti</b>\n"
+            "Testlaringiz, o‘quvchilar natijalari va hisobotlar shu yerda. "
+            "Har bir ustoz o‘z testini yuklashi mumkin.",
             reply_markup=get_mini_app_keyboard(),
         )
         return
     text = (
-        "📖 <b>Botdan foydalanish qo'llanmasi:</b>\n\n"
+        "📖 <b>Basirat · Foydalanish qo‘llanmasi</b>\n\n"
         "<b>O'quvchilar uchun:</b>\n"
         "1. <b>✍️ Test topshirish</b> tugmasini bosing.\n"
         "2. O'qituvchi bergan test kodini kiriting (masalan: <code>T-101</code>).\n"

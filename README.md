@@ -505,6 +505,40 @@ session once all timed attempts have submitted or expired and grading is done.
 Migration 4 preserves existing tests as untimed and retains all results. Keep the
 single-instance deployment and pre-release database/media backup procedure.
 
+### Optional question voice explanations
+
+Before publishing, open a question in **O‘qituvchi kabineti → Qoralamalar** and
+use **Ovozli izoh → Ovoz yozish**. Allow microphone access, record up to two
+minutes, then press **To‘xtatish**. The recording uploads automatically; listen
+to it, record a replacement, or remove its attachment. Audio file upload is also
+available when a Telegram client cannot grant microphone access. A failed upload
+keeps the local recording for retry until cancelled; switching questions and
+publishing stay blocked until it is uploaded or cancelled.
+
+Each explanation is optional and independent of the AI grading rubric. It is
+absent from student question payloads. After the student's own submission,
+including automatic timeout submission, **O‘qituvchi izohlari** appears in their
+results immediately, without waiting for the teacher to finalize scores. Audio
+URLs require authentication and submission to that exact session; knowing an
+asset ID, another student's submission, or submitting a previous session grants
+no access. Reused sessions retain explanations and enforce their own access.
+
+The server validates and converts audio to MP3 using FFmpeg (included in the
+Docker image and installed by CI). Uploads are capped at 8 MB and decoded audio
+at two minutes; recordings per draft, including replaced uploads, are capped at
+64 MB. Files live under `MEDIA_PATH`, alongside other backed-up media. No new
+database migration is needed: recordings use private assets and optional content
+fields. Microphone recording requires HTTPS (localhost works for development)
+and client permission; check actual Telegram Android/iOS clients before release.
+
+Voice players provide play/pause and seeking without native download/overflow
+menus. Student test views discourage copying, long-press menus, dragging,
+printing and saving the page, while keeping typed-answer editing available.
+These are UI deterrents, not DRM: Telegram's documented Mini App API has no
+screenshot-blocking method, and browsers cannot guarantee prevention of device
+screenshots, screen recording or saving media already delivered for playback.
+Authenticated, session-specific media checks remain the actual access boundary.
+
 ### Mini App and DeepSeek imports
 
 The application serves a React/TypeScript Mini App and an authenticated aiohttp
@@ -514,7 +548,14 @@ Python and the optional Caddy reverse proxy. DeepSeek requests use aiohttp REST.
 Teacher flow: send/forward one PDF or ordered JPG/PNG/WebP photos to the bot's
 private chat, wait for extraction,
 review passages/questions/options/subparts and diagram crops, enter the official
-answer keys and open-answer rubrics, then approve each question and publish.
+answer keys and open-answer rubrics, then publish. Valid saved answers are marked
+ready automatically; there is no separate **Savolni tekshirdim** checkbox. A
+compact question preview and one-tap A–F key selector are shown by default;
+**Matn va variantlarni tahrirlash** opens the full editor when corrections are
+needed. Open-answer criteria remain directly editable. **Oldingi / Keyingi**
+save before moving between questions and preserve the current question if saving
+fails. The question map and ready-answer count show remaining work. Incomplete
+questions still block publication.
 PDFs/photos may total 20 MB and 30 pages. Imports are checkpointed in batches.
 Original pages remain private to their owner; students receive only approved
 crops referenced by the published test. Never crop answer keys or unrelated
@@ -579,10 +620,22 @@ Caddy obtains and renews HTTPS certificates. If you already have an HTTPS proxy,
 route the domain to `127.0.0.1:8080` instead. Telegram requires HTTPS in production.
 At startup the bot sets its menu button from `MINI_APP_URL`; `/start` also includes
 an Open Mini App button. Configure the same URL in BotFather's Mini App settings.
+Basirat's pre-Start welcome description and short profile description are synced
+in the background for the default language and Uzbek. Existing matching text is
+left alone; temporary Telegram failures retry without stopping polling. Edit the
+copy in `services/bot_branding.py`; the next restart applies it.
+
+The `/start` message includes a short study suggestion. With `AI_WELCOME_ENABLED=true`
+(default), the existing DeepSeek configuration generates one shared batch of tips
+on startup and every 24 hours. Students never wait for AI: requests use cached tips
+or prepared fallbacks immediately. Failed refreshes retain the previous tips and
+retry after 15 minutes. No student names, IDs, answers or activity are sent to the
+model. Set `AI_WELCOME_ENABLED=false` to use prepared tips only.
+
 Telegram identity signatures, expiry, role and test ownership are checked on the
 server. There is no development authentication bypass.
 
-For local development, install Poppler (`poppler-utils` on Debian/Ubuntu), then:
+For local development, install Poppler and FFmpeg (`sudo apt-get install poppler-utils ffmpeg` on Debian/Ubuntu), then:
 
 ```bash
 .venv/bin/python main.py

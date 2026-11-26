@@ -8,10 +8,15 @@ import type { CatalogPage, Profile, Visibility, TeacherCounts } from './types';
 import { useAttemptTimer } from './useAttemptTimer';
 import { formatCountdown } from './timer';
 import { PaymentPanel } from './payments';
+import { VoiceExplanation, ExplanationPlayer } from './voice-explanation';
+import { prepareReview, questionIssues } from './question-review';
+import { ProtectedTest } from './content-protection';
+import { SubmissionCelebration } from './submission-celebration';
 import { BrowserLogin, BrowserPaymentPanel } from './browser-payments';
 import './style.css';
 import './workspace.css';
 import './pages.css';
+import './question-review.css';
 
 const assetUrl = (id: string) => '/api/assets/' + id;
 const message = (error: unknown) => error instanceof Error ? error.message : 'Amal bajarilmadi.';
@@ -116,7 +121,7 @@ function Workspace() {
           <PublisherProfile profile={identity.profile} suggestedName={fullName} saved={profile => setIdentity({ ...identity, profile })} />
           <button className="secondary" onClick={() => setGuide(true)}><Icon name="help" size={18} />Yordam</button>
           {(identity.show_payments || (identity.session_audience === 'browser' && identity.show_web_payments)) && <details className="card account-payments"><summary><span><Icon name="spark" size={18} />Sinov to‘lovlari</span><span className="muted">Admin</span><Icon name="chevron" size={16} /></summary>{identity.show_payments && <PaymentPanel />}{identity.session_audience === 'browser' && identity.show_web_payments && <BrowserPaymentPanel />}</details>}
-        </div> : <StudentCatalog firstName={identity.user.first_name} section={page} initialHandle={entryTest.current} onFocus={focusStudent} renderAttempt={(test, back, done) => <Attempt key={test.id} initial={test} back={back} done={done} />} />}
+        </div> : <StudentCatalog firstName={identity.user.first_name} section={page} initialHandle={entryTest.current} onFocus={focusStudent} renderAttempt={(test, back, done) => <ProtectedTest><Attempt key={test.id} initial={test} back={back} done={done} /></ProtectedTest>} />}
       </main><footer className="workspace-footer"><span>Basirat · Barcha uchun ochiq</span><button className="quiet" onClick={() => setGuide(true)}>Yordam<Icon name="help" size={15} /></button></footer>
     </div>{identity && mode === 'student' && !focused && studentNav(true)}<Guide open={guide} close={() => setGuide(false)} />
   </div>;
@@ -207,6 +212,12 @@ function Teacher({ botImportUrl, initialImport, backToStudent }: { botImportUrl?
 }
 
 function ImportEditor({ id, back, published }: { id: string; back(): void; published(id: number): void }) {
+  const [voiceBusy, setVoiceBusy] = useState(false);
+  const voiceActive = useRef(false);
+  function voiceActivity(active: boolean) { voiceActive.current = active; setVoiceBusy(active); }
+  function requireVoiceReady() {
+    if (voiceActive.current) throw new Error('Avval ovozli izohni to‘xtatib yuklang yoki bekor qiling.');
+  }
   const confirm = useConfirmation();
   const wideSource = useMediaQuery('(min-width: 1251px)');
   const [record, setRecord] = useState<ImportRecord | null>(null);
@@ -228,7 +239,13 @@ function ImportEditor({ id, back, published }: { id: string; back(): void; publi
     try {
       const item = await api<ImportRecord>('/teacher/imports/' + id);
       setRecord(item);
-      if (item.document && !latestDocument.current) { setDocument(item.document); latestDocument.current = item.document; revision.current = item.revision; metadata.current = { visibility: item.visibility, subject: item.subject, duration_minutes: item.duration_minutes }; savedDocument.current = JSON.stringify({ document: item.document, ...metadata.current }); }
+      if (item.document && !latestDocument.current) {
+        const prepared = prepareReview(item.document);
+        setDocument(prepared); latestDocument.current = prepared; revision.current = item.revision;
+        metadata.current = { visibility: item.visibility, subject: item.subject, duration_minutes: item.duration_minutes };
+        savedDocument.current = JSON.stringify({ document: item.document, ...metadata.current });
+        setDirty(JSON.stringify(prepared) !== JSON.stringify(item.document));
+      }
     } catch (error) { setError(message(error)); }
   }
   useEffect(() => { void load(); }, [id]);
@@ -248,7 +265,7 @@ function ImportEditor({ id, back, published }: { id: string; back(): void; publi
     const timer = setTimeout(() => void save().catch(error => setError(message(error))), 1500);
     return () => clearTimeout(timer);
   }, [document, dirty, busy, record?.visibility, record?.subject, record?.duration_minutes]);
-  function change(next: TestDocument) { latestDocument.current = next; setDocument(next); setDirty(true); setNotice(''); }
+  function change(next: TestDocument) { const prepared = prepareReview(next); latestDocument.current = prepared; setDocument(prepared); setDirty(true); setNotice(''); }
   async function save() {
     while (saving.current) await saving.current;
     if (!latestDocument.current) return revision.current;
@@ -266,8 +283,9 @@ function ImportEditor({ id, back, published }: { id: string; back(): void; publi
     saving.current = task;
     try { return await task; } finally { saving.current = null; }
   }
-  useExitGuard(async () => { await save(); });
+  useExitGuard(async () => { requireVoiceReady(); await save(); });
   async function act(publish = false) {
+    if (voiceActive.current) return;
     setBusy(true); setError('');
     try {
       const current = await save();
@@ -281,6 +299,16 @@ function ImportEditor({ id, back, published }: { id: string; back(): void; publi
     if (!document) return;
     change({ ...document, questions: document.questions.map((q, i) => i === questionIndex ? question : q) });
   }
+  const reviewHeading = useRef<HTMLHeadingElement>(null);
+  async function moveQuestion(next: number) {
+    if (busy || voiceActive.current || next < 0 || next >= (latestDocument.current?.questions.length || 0)) return;
+    setBusy(true); setError('');
+    try {
+      await save(); setQuestionIndex(next); setVisiblePage(0);
+      requestAnimationFrame(() => { reviewHeading.current?.focus({ preventScroll: true }); reviewHeading.current?.scrollIntoView({ block: 'start' }); });
+    } catch (error) { setError(message(error)); window.scrollTo({ top: 0 }); }
+    finally { setBusy(false); }
+  }
   const q = document?.questions[questionIndex];
   const sourcePage = q?.source_pages[0] || record?.assets.find(a => a.kind === 'page')?.page || 1;
   const [visiblePage, setVisiblePage] = useState(0);
@@ -288,10 +316,10 @@ function ImportEditor({ id, back, published }: { id: string; back(): void; publi
   const page = pages.find(a => a.page === (visiblePage || sourcePage));
   const reviewed = document?.questions.filter(q => q.reviewed).length || 0;
   const fullyReviewed = Boolean(document && document.questions.length >= 5 && reviewed === document.questions.length);
-  async function leave() { setBusy(true); try { await save(); back(); } catch (error) { setError(message(error)); } finally { setBusy(false); } }
+  async function leave() { setBusy(true); try { requireVoiceReady(); await save(); back(); } catch (error) { setError(message(error)); } finally { setBusy(false); } }
   useTelegramBack(() => { if (!busy) void leave(); });
   return <>
-    <button className="back-link" disabled={busy} onClick={() => void leave()}><Icon name="back" size={17} />O‘qituvchi kabineti</button>
+    <button className="back-link" disabled={busy || voiceBusy} onClick={() => void leave()}><Icon name="back" size={17} />O‘qituvchi kabineti</button>
     <PageHeading icon="edit" title="Testni tayyorlash" action={record && <Badge status={record.status} />} />
     <ol className="workflow-steps compact-workflow" aria-label="Test yaratish bosqichlari"><li className="done"><span><Icon name="check" size={14} /></span>Fayl yuklash</li><li className={document ? 'done' : 'current'}><span>{document ? <Icon name="check" size={14} /> : '2'}</span>AI ajratishi</li><li className={document ? 'current' : ''}><span>3</span>Tekshirish</li><li className={record?.status === 'published' ? 'done' : ''}><span>4</span>Nashr qilish</li></ol>
     {error && <Alert>{error}</Alert>}
@@ -299,25 +327,29 @@ function ImportEditor({ id, back, published }: { id: string; back(): void; publi
     {!record ? <Loading /> : record.status === 'published' ? <section className="card"><EmptyState icon="check" title="Testingiz tayyor!" action={<button onClick={() => published(record.published_test_id!)}>Test va natijalar<Icon name="arrow" size={17} /></button>}>Endi test havolasini o‘quvchilarga yuborishingiz mumkin.</EmptyState></section> : !document ? <section className="card processing-card"><span className="processing-icon"><Icon name={record.status === 'failed' ? 'refresh' : record.status === 'collecting' ? 'image' : 'spark'} size={32} /></span><Badge status={record.status} /><h2>{record.status === 'collecting' ? 'Rasmlar qabul qilinmoqda' : record.status === 'failed' ? 'Ajratish tugamadi' : 'Savollar ajratilmoqda'}</h2><p className="muted">{record.title}</p><div className="progress-label"><span>Tayyorlanish jarayoni</span><strong>{record.progress}%</strong></div><progress aria-label="Testni ajratish jarayoni" value={record.progress} max={100} />{record.status === 'collecting' ? <><p>{record.assets.filter(a => a.kind === 'source').length} ta rasm qabul qilindi. Qolgan sahifalarni botga yuboring, so‘ng ajratishni boshlang.</p><button disabled={busy} onClick={async () => { setBusy(true); setError(''); try { await post('/teacher/imports/' + id + '/start'); await load(); } catch (error) { setError(message(error)); } finally { setBusy(false); } }}><Icon name="spark" size={18} />Savollarni ajratish</button></> : <p>{record.error || 'Ilovani yopishingiz mumkin. Tayyor bo‘lgach, bot xabar beradi.'}</p>}{record.status === 'failed' && <button disabled={busy} onClick={async () => { setBusy(true); try { await post('/teacher/imports/' + id + '/retry'); await load(); } catch (error) { setError(message(error)); } finally { setBusy(false); } }}><Icon name="refresh" size={18} />Qayta urinish</button>}</section> : <fieldset className="editor-fields" disabled={busy}>
       <section className="card document-overview"><div className="overview-top"><span className="list-icon"><Icon name="file" size={23} /></span><div><Field label="Test nomi" rows={1} value={document.title} onChange={title => change({ ...document, title })} /></div></div>
         <details className="settings-disclosure"><summary><Icon name="edit" size={16} />Nashr sozlamalari<span>{visibilityLabel(record.visibility)} · {record.duration_minutes ? `${record.duration_minutes} daq.` : 'Cheklanmagan'}</span><Icon name="chevron" size={16} /></summary><PublicationFields visibility={record.visibility} subject={record.subject} duration={record.duration_minutes} change={(visibility, subject, duration_minutes) => { metadata.current = { visibility, subject, duration_minutes }; setRecord({ ...record, visibility, subject, duration_minutes }); setDirty(true); }} /></details>
-        <div className="document-meta"><span><strong>{document.questions.length}</strong> ta savol</span><span><strong>{document.questions.filter(q => q.kind === 'open').length}</strong> ta ochiq javob</span><span className="reviewed-count"><Icon name="check" size={16} /><strong>{reviewed}/{document.questions.length}</strong> tasdiqlangan</span></div>
+        <div className="document-meta"><span><strong>{document.questions.length}</strong> ta savol</span><span><strong>{document.questions.filter(q => q.kind === 'open').length}</strong> ta ochiq javob</span><span className="reviewed-count"><Icon name="check" size={16} /><strong>{reviewed}/{document.questions.length}</strong> javob tayyor</span></div>
         {!!document.warnings.length && <details className="warning-details"><summary><Icon name="help" size={16} />E’tibor talab qiladi ({document.warnings.length})</summary><ul>{document.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul></details>}
-        <details className="bulk-keys"><summary><Icon name="grid" size={16} />Javoblar kaliti<Icon name="plus" size={16} /></summary><p className="muted">Kalitlarni kiritgach, har bir savolni tekshirib tasdiqlang.</p><Field label="Javoblar kaliti" placeholder="1:A, 2:F, 3:B" value={keys} onChange={setKeys} /><button className="secondary" onClick={() => {
+        <details className="bulk-keys"><summary><Icon name="grid" size={16} />Javoblar kaliti<Icon name="plus" size={16} /></summary><p className="muted">Masalan: 1:A, 2:F, 3:B. To‘g‘ri kalitlar avtomatik saqlanadi.</p><Field label="Javoblar kaliti" placeholder="1:A, 2:F, 3:B" value={keys} onChange={setKeys} /><button className="secondary" onClick={() => {
           const pairs = Array.from(keys.matchAll(/(\d{1,2})\s*[.\-:)]\s*([A-F])/gi));
           if (!pairs.length) { setError('Kalitlar topilmadi. 1:A, 2:F formatidan foydalaning.'); return; }
           const mapping = Object.fromEntries(pairs.map(p => [Number(p[1]), p[2].toUpperCase()]));
           change({ ...document, questions: document.questions.map(q => q.kind !== 'open' && mapping[q.number] ? { ...q, answer: mapping[q.number], reviewed: false } : q) });
-          setNotice('Kalitlar kiritildi. Har bir savolni tekshirib tasdiqlang.');
+          setNotice('Kalitlar kiritildi. Tayyor javoblar avtomatik belgilanadi.');
         }}>Kalitlarni qo‘llash</button></details>
       </section>
-      <nav className="tabs editor-tabs" aria-label="Tahrirlash bo‘limlari"><button className={tab === 'questions' ? 'selected' : ''} aria-pressed={tab === 'questions'} onClick={() => setTab('questions')}><Icon name="grid" size={17} />Savollar<span>{document.questions.length}</span></button><button className={tab === 'passages' ? 'selected' : ''} aria-pressed={tab === 'passages'} onClick={() => setTab('passages')}><Icon name="book" size={17} />Umumiy matnlar<span>{document.passages.length}</span></button></nav>
+      <nav className="tabs editor-tabs" aria-label="Tahrirlash bo‘limlari"><button className={tab === 'questions' ? 'selected' : ''} aria-pressed={tab === 'questions'} disabled={voiceBusy} onClick={() => setTab('questions')}><Icon name="grid" size={17} />Savollar<span>{document.questions.length}</span></button><button className={tab === 'passages' ? 'selected' : ''} aria-pressed={tab === 'passages'} disabled={voiceBusy} onClick={() => setTab('passages')}><Icon name="book" size={17} />Umumiy matnlar<span>{document.passages.length}</span></button></nav>
       <div className="editor-layout"><div className="editor-main">
         {tab === 'questions' ? <section className="card">
-          <div className="section-heading"><h2>Savolni tahrirlash</h2><span className="muted">{questionIndex + 1} / {document.questions.length}</span></div><nav className="question-nav" aria-label="Tahrirlash uchun savolni tanlang">{document.questions.map((q, i) => <button key={i} aria-label={`${q.number}-savol${q.reviewed ? ', tasdiqlangan' : ''}`} aria-current={i === questionIndex ? 'step' : undefined} className={i === questionIndex ? 'selected' : q.reviewed ? 'complete' : 'secondary'} onClick={() => { setQuestionIndex(i); setVisiblePage(0); }}>{q.number}</button>)}</nav>
-          {q && <QuestionEditor key={questionIndex} question={q} passages={document.passages} pages={pages} update={updateQuestion} />}
-          <div className="actions editor-question-actions"><button className="secondary" disabled={document.questions.length >= 44} onClick={() => { const number = Array.from({ length: 44 }, (_, i) => i + 1).find(n => !document.questions.some(q => q.number === n))!; change({ ...document, questions: [...document.questions, newQuestion(number)] }); setQuestionIndex(document.questions.length); }}><Icon name="plus" size={16} />Savol qo‘shish</button>{q && <button className="danger" onClick={async () => { if (await confirm({ title: 'Savol o‘chirilsinmi?', description: `${q.number}-savol va uning javob mezoni qoralamadan olib tashlanadi.`, action: 'Savolni o‘chirish', danger: true })) { change({ ...document, questions: document.questions.filter((_, i) => i !== questionIndex) }); setQuestionIndex(0); } }}>O‘chirish</button>}</div>
+          <div className="section-heading"><h2 ref={reviewHeading} tabIndex={-1}>Savolni tahrirlash</h2><span className="muted">{questionIndex + 1} / {document.questions.length}</span></div><nav className="question-nav" aria-label="Tahrirlash uchun savolni tanlang">{document.questions.map((q, i) => <button key={i} disabled={busy || voiceBusy} aria-label={`${q.number}-savol${q.reviewed ? ', javob tayyor' : ', javob kerak'}`} aria-current={i === questionIndex ? 'step' : undefined} className={i === questionIndex ? 'selected' : q.reviewed ? 'complete' : 'secondary'} onClick={() => void moveQuestion(i)}>{q.number}</button>)}</nav>
+          {q && <QuestionEditor key={questionIndex} question={q} passages={document.passages} pages={pages} update={updateQuestion} importId={id} voiceActivity={voiceActivity} />}
+          <div className="actions editor-question-actions"><button className="secondary" disabled={voiceBusy || document.questions.length >= 44} onClick={() => { const number = Array.from({ length: 44 }, (_, i) => i + 1).find(n => !document.questions.some(q => q.number === n))!; change({ ...document, questions: [...document.questions, newQuestion(number)] }); setQuestionIndex(document.questions.length); }}><Icon name="plus" size={16} />Savol qo‘shish</button>{q && <button className="danger" disabled={voiceBusy} onClick={async () => { if (await confirm({ title: 'Savol o‘chirilsinmi?', description: `${q.number}-savol va uning javob mezoni qoralamadan olib tashlanadi.`, action: 'Savolni o‘chirish', danger: true })) { change({ ...document, questions: document.questions.filter((_, i) => i !== questionIndex) }); setQuestionIndex(0); } }}>O‘chirish</button>}</div>
         </section> : <section className="card">{document.passages.map((p, i) => <PassageEditor key={i} passage={p} pages={pages} update={next => change({ ...document, passages: document.passages.map((p, n) => i === n ? next : p), questions: document.questions.map(q => q.passage_id === p.id ? { ...q, reviewed: false } : q) })} remove={() => change({ ...document, passages: document.passages.filter((_, n) => n !== i) })} />)}<button onClick={() => change({ ...document, passages: [...document.passages, { id: 'p' + Date.now(), title: '', text: '', media: [], source_pages: [] }] })}>Matn qo‘shish</button></section>}
       </div><aside className="card source"><details open={wideSource}><summary><span><Icon name="file" size={18} />Asl hujjat</span><Icon name="chevron" size={17} /></summary><label className="field">Sahifani tanlang<select value={page?.page || ''} onChange={e => setVisiblePage(Number(e.target.value))}>{pages.map(p => <option key={p.id} value={p.page}>{p.page}-sahifa</option>)}</select></label>{page && <a className="source-image" href={assetUrl(page.id)} target="_blank" rel="noreferrer"><img src={assetUrl(page.id)} alt={`${page.page}-sahifa — kattalashtirish uchun bosing`} /><span><Icon name="search" size={16} />Kattalashtirish</span></a>}<p className="muted">Asldagi ataylab yozilgan imlo xatolarini saqlang.</p></details></aside></div>
-      <footer className="sticky editor-footer"><div><span className={'save-state ' + (dirty ? 'saving' : '')}><Icon name={dirty ? 'clock' : 'check'} size={15} />{busy ? 'Saqlanmoqda…' : dirty ? 'Avtomatik saqlanmoqda…' : 'Saqlangan'}</span><small>{fullyReviewed ? 'Nashrga tayyor' : `${document.questions.length - reviewed} ta savolni tekshirib tasdiqlang.`}</small></div><div className="actions"><button className="secondary" disabled={busy} onClick={() => void act()}>Saqlash</button><button className="success-action" disabled={busy || !fullyReviewed} onClick={async () => { if (await confirm({ title: 'Test nashr qilinsinmi?', description: (record.visibility === 'public' ? 'Test katalogda ko‘rinadi. ' : 'Test faqat havola orqali ochiladi. ') + 'Nashr qilingach, savollar va javob mezonlari o‘zgarmaydi.', action: 'Nashr qilish' })) void act(true); }}><Icon name="send" size={17} />Nashr qilish</button></div></footer>
+      <footer className="sticky editor-footer review-footer">
+        <div className="review-footer-status"><span className={'save-state ' + (dirty ? 'saving' : '')}><Icon name={dirty ? 'clock' : 'check'} size={15} />{busy ? 'Saqlanmoqda…' : dirty ? 'Avtomatik saqlanmoqda…' : 'Saqlangan'}</span><small>{fullyReviewed ? 'Nashrga tayyor' : `${reviewed}/${document.questions.length} javob tayyor`}</small></div>
+        {tab === 'questions' && <nav className="review-traversal" aria-label="Savollarni ko‘rib chiqish"><button className="secondary" disabled={busy || voiceBusy || questionIndex === 0} onClick={() => void moveQuestion(questionIndex - 1)}><Icon name="back" size={16} />Oldingi</button><span>{questionIndex + 1}/{document.questions.length}</span><button disabled={busy || voiceBusy || questionIndex >= document.questions.length - 1} onClick={() => void moveQuestion(questionIndex + 1)}>Keyingi<Icon name="arrow" size={16} /></button></nav>}
+        <div className="actions"><button className="secondary" disabled={busy || voiceBusy} onClick={() => void act()}>Saqlash</button><button className="success-action" disabled={busy || voiceBusy || !fullyReviewed} onClick={async () => { if (await confirm({ title: 'Test nashr qilinsinmi?', description: (record.visibility === 'public' ? 'Test katalogda ko‘rinadi. ' : 'Test faqat havola orqali ochiladi. ') + 'Nashr qilingach, savollar va javob mezonlari o‘zgarmaydi.', action: 'Nashr qilish' })) void act(true); }}><Icon name="send" size={17} />Nashr qilish</button></div>
+      </footer>
     </fieldset>}
   </>;
 }
@@ -349,21 +381,30 @@ function RegionEditor({ regions, pages, update }: { regions: Region[]; pages: Pa
   </details>;
 }
 
-function QuestionEditor({ question: q, passages, pages, update }: { question: Question; passages: Passage[]; pages: PageAsset[]; update(q: Question): void }) {
+function QuestionEditor({ question: q, passages, pages, update, importId, voiceActivity }: { question: Question; passages: Passage[]; pages: PageAsset[]; update(q: Question): void; importId: string; voiceActivity(active: boolean): void }) {
   const patch = (value: Partial<Question>) => update({ ...q, ...value, reviewed: false });
+  const issues = questionIssues(q, passages.map(passage => passage.id));
+  const [editing, setEditing] = useState(() => q.kind === 'open' || !q.text.trim() || q.options.length < 2);
+  const passage = passages.find(item => item.id === q.passage_id);
   return <>
+    {!!q.warnings.length && <Alert tone="warning">{q.warnings.join('\n')}</Alert>}
+    {!editing && <section className="question-review-preview" aria-label={`${q.number}-savol ko‘rinishi`}>
+      {passage && <details className="review-passage"><summary><Icon name="book" size={16} />{passage.title || 'Umumiy matn'}</summary><RichText text={passage.text} /></details>}
+      <div className="review-question-text"><RichText text={q.text} /></div>
+      <ol className="review-options">{q.options.map(option => <li key={option.label} className={q.answer === option.label ? 'key-selected' : ''}><b>{option.label}</b><RichText text={option.text} /></li>)}</ol>
+    </section>}
+    <details className="question-edit-details" open={editing} onToggle={event => setEditing(event.currentTarget.open)}><summary><Icon name="edit" size={16} />{q.kind === 'open' ? 'Javob va tekshirish mezoni' : 'Matn va variantlarni tahrirlash'}<Icon name="chevron" size={16} /></summary>
     <details className="settings-disclosure question-settings"><summary><Icon name="edit" size={16} />Savol sozlamalari<span>{q.kind === 'open' ? 'Ochiq javob' : q.kind === 'matching' ? 'Moslashtirish' : 'Variantli'}</span><Icon name="chevron" size={16} /></summary>
     <div className="row"><label>Savol raqami<input type="number" min="1" max="44" value={q.number} onChange={e => patch({ number: Number(e.target.value) })} /></label><label>Turi<select value={q.kind} onChange={e => { const kind = e.target.value as Question['kind']; patch({ kind, options: kind === 'open' ? [] : q.options.length ? q.options : [{ label: 'A', text: '' }, { label: 'B', text: '' }], parts: kind === 'open' ? q.parts : [], answer: '' }); }}><option value="choice">Variantli</option><option value="matching">Moslashtirish</option><option value="open">Ochiq</option></select></label></div>
     <label className="field">Umumiy matn<select value={q.passage_id || ''} onChange={e => patch({ passage_id: e.target.value || null })}><option value="">Alohida savol</option>{passages.map(p => <option key={p.id} value={p.id}>{p.title || p.id}</option>)}</select></label>
     </details>
-    {!!q.warnings.length && <Alert tone="warning">{q.warnings.join('\n')}</Alert>}
     <Field label="Savol matni" rows={5} placeholder="Savolning to‘liq matnini kiriting…" value={q.text} onChange={text => patch({ text })} />
     <details className="format-help"><summary>Matn ko‘rinishi</summary><RichText text={q.text} /><p className="field-hint">**qalin**, *kursiv*, &lt;u&gt;tagiga chizish&lt;/u&gt;</p></details>
 
     {q.kind !== 'open' ? <>
       <h3 className="field-heading">Javob variantlari</h3>{q.options.map((option, index) => <div className="option-editor" key={index}><b>{option.label}</b><textarea aria-label={`${option.label} variant matni`} rows={2} value={option.text} onChange={e => patch({ options: q.options.map((o, i) => i === index ? { ...o, text: e.target.value } : o) })} /><button className="icon-button" aria-label={`${option.label} variantini o‘chirish`} onClick={() => patch({ options: q.options.filter((_, i) => i !== index) })}><Icon name="close" size={16} /></button></div>)}
       <button className="secondary" disabled={q.options.length >= 6} onClick={() => { const label = 'ABCDEF'.split('').find(label => !q.options.some(o => o.label === label))!; patch({ options: [...q.options, { label, text: '' }] }); }}>Variant qo‘shish</button>
-      <label className="field">To‘g‘ri javob<select value={q.answer} onChange={e => patch({ answer: e.target.value })}><option value="">Tanlang</option>{q.options.map(o => <option key={o.label}>{o.label}</option>)}</select></label>
+
     </> : <>
       {q.parts.map((part, index) => <div className="option-editor" key={part.id}><b>{part.id})</b><textarea aria-label={`${part.id} qism matni`} value={part.prompt} onChange={e => patch({ parts: q.parts.map((p, i) => i === index ? { ...p, prompt: e.target.value } : p) })} /><button className="icon-button" aria-label={`${part.id} qismini o‘chirish`} onClick={() => patch({ parts: q.parts.filter((_, i) => i !== index) })}><Icon name="close" size={16} /></button></div>)}
       <button className="secondary" disabled={q.parts.length >= 6} onClick={() => patch({ parts: [...q.parts, { id: 'abcdef'.split('').find(id => !q.parts.some(p => p.id === id))!, prompt: '' }] })}>a/b qism qo‘shish</button>
@@ -373,7 +414,10 @@ function QuestionEditor({ question: q, passages, pages, update }: { question: Qu
       {!!q.parts.length && <p className="muted">Barcha qismlar to‘g‘ri bo‘lsa, bu bitta savol uchun {q.points} ball beriladi.</p>}
     </>}
     <RegionEditor regions={q.media} pages={pages} update={media => patch({ media })} />
-    <label className={'check ' + (q.reviewed ? 'is-checked' : '')}><input type="checkbox" checked={q.reviewed} onChange={e => update({ ...q, reviewed: e.target.checked })} /><span><strong>Savolni tekshirdim</strong><small>Matn va javob asl hujjatga mos.</small></span></label>
+    </details>
+    {q.kind !== 'open' && (<fieldset className="answer-key-picker"><legend>To‘g‘ri javob</legend><div>{q.options.map(option => <label key={option.label} className={q.answer === option.label ? 'chosen' : ''}><input type="radio" name="teacher-answer-key" value={option.label} checked={q.answer === option.label} onChange={() => patch({ answer: option.label })} /><span>{option.label}</span></label>)}</div></fieldset>)}
+    <VoiceExplanation importId={importId} number={q.number} audio={q.explanation_audio} saved={explanation_audio => update({ ...q, explanation_audio })} activity={voiceActivity} />
+    <div className={'question-readiness ' + (issues.length ? 'needs-answer' : 'answer-ready')} role="status"><Icon name={issues.length ? 'edit' : 'check'} size={17} /><span>{issues.length ? issues.join(' ') : 'Javob tayyor · avtomatik saqlanadi'}</span></div>
   </>;
 }
 
@@ -385,7 +429,19 @@ function PassageEditor({ passage: p, pages, update, remove }: { passage: Passage
 function Attempt({ initial, back, done }: { initial: StudentTest; back(): void; done(): void }) {
   const [answers, setAnswers] = useState<Answers>(initial.draft);
   const [result, setResult] = useState<Submission | null>(initial.submission);
-  const clock = useAttemptTimer(initial, result, setResult);
+  const [celebrate, setCelebrate] = useState(false);
+  const receivedSubmission = useRef(Boolean(initial.submission));
+  const acceptSubmission = useCallback((submission: Submission) => {
+    if (!receivedSubmission.current) setCelebrate(true);
+    receivedSubmission.current = true;
+    setResult(submission);
+  }, []);
+  const clock = useAttemptTimer(initial, result, acceptSubmission);
+  useEffect(() => {
+    if (!celebrate) return;
+    const timer = window.setTimeout(() => setCelebrate(false), 3400);
+    return () => window.clearTimeout(timer);
+  }, [celebrate]);
   const confirm = useConfirmation();
   const [index, setIndex] = useState(0);
   const [review, setReview] = useState(false);
@@ -457,7 +513,7 @@ function Attempt({ initial, back, done }: { initial: StudentTest; back(): void; 
   }
   async function submit() {
     setBusy(true); setError('');
-    try { await flush(); const submission = await post<Submission>('/tests/' + initial.code + '/submit', { answers: latest.current }); setResult(submission); }
+    try { await flush(); const submission = await post<Submission>('/tests/' + initial.code + '/submit', { answers: latest.current }); acceptSubmission(submission); }
     catch (error) { setError(message(error)); } finally { setBusy(false); }
   }
   const count = questions.filter(q => questionAnswered(q.parts, answers[q.number])).length;
@@ -484,7 +540,7 @@ function Attempt({ initial, back, done }: { initial: StudentTest; back(): void; 
     {!result && clock.seconds !== null && clock.seconds > 0 && clock.seconds <= 60 && <p className="timer-warning" role="alert">Bir daqiqa yoki undan kam vaqt qoldi. Javoblaringiz saqlanganini tekshiring.</p>}
     {!result && clock.problem && <Alert tone="warning">{clock.problem}<button className="quiet" onClick={() => void clock.sync().catch(() => {})}>Qayta ulanish</button></Alert>}
     {error && !result && <Alert>{error}</Alert>}
-    {result ? <StudentResult result={result} back={done} /> : initial.status !== 'active' ? <section className="card"><EmptyState icon="clock" title="Test yakunlangan" action={<button className="secondary" onClick={back}>Boshqa testga kirish</button>}>Bu testga yangi javoblar qabul qilinmaydi.</EmptyState></section> : review ? <>
+    {result ? <StudentResult result={result} back={done} celebrate={celebrate} /> : initial.status !== 'active' ? <section className="card"><EmptyState icon="clock" title="Test yakunlangan" action={<button className="secondary" onClick={back}>Boshqa testga kirish</button>}>Bu testga yangi javoblar qabul qilinmaydi.</EmptyState></section> : review ? <>
       <section className="card review-summary"><h2>Topshirishga tayyormisiz?</h2><p>Topshirgach javoblar o‘zgarmaydi.</p><div className="review-counts"><span><strong>{count}</strong> javob berilgan</span><span className={count < questions.length ? 'unanswered-count' : ''}><strong>{questions.length - count}</strong> to‘liq javobsiz</span></div>{count < questions.length && <Alert tone="warning">{questions.length - count} ta savol to‘liq javobsiz. Bo‘sh yoki to‘liq bo‘lmagan javoblar noto‘g‘ri hisoblanadi.</Alert>}</section>
       <section className="card review-list"><div className="section-heading"><h2>Javoblaringiz</h2><span className="muted">{questions.length} ta savol</span></div>{questions.map((q, i) => <button className="review-row" disabled={busy} key={q.number} onClick={() => goTo(i)}><span className={'review-number ' + (questionAnswered(q.parts, answers[q.number]) ? 'answered' : '')}>{q.number}</span><span><strong>{q.number}-savol</strong><span className="answer-preview">{answerPreview(answers[q.number], q.parts)}</span></span><Icon name="edit" size={17} /></button>)}</section><footer className="sticky attempt-footer"><button className="secondary" disabled={busy} onClick={() => setReview(false)}><Icon name="back" size={17} />Savollarga qaytish</button><button className="submit-test" disabled={busy || clock.expired} onClick={() => void submit()}>{busy ? <><span className="spinner" />Topshirilmoqda…</> : <>Tasdiqlash va topshirish<Icon name="send" size={17} /></>}</button></footer>
     </> : q && <>
@@ -498,15 +554,16 @@ function Attempt({ initial, back, done }: { initial: StudentTest; back(): void; 
   </>;
 }
 
-function StudentResult({ result, back }: { result: Submission; back(): void }) {
+function StudentResult({ result, back, celebrate = false }: { result: Submission; back(): void; celebrate?: boolean }) {
+  const explanations = usePagedList(result.answers.filter(answer => answer.explanation_audio_url), 6, result.id);
   const correct = result.answers.filter(a => a.correct === true).length;
   const pending = result.answers.filter(a => a.correct === null).length;
   const wrong = result.answers.length - correct - pending;
   return <>
     {result.auto_submitted && <Alert tone="warning">Vaqt tugadi. Vaqt tugashidan oldin serverda saqlangan javoblaringiz avtomatik topshirildi.</Alert>}
-    <section className="card result-hero"><span className="result-check"><Icon name="check" size={30} /></span><span className="eyebrow">{result.score === undefined ? 'JAVOBLAR TOPSHIRILDI' : 'YAKUNIY NATIJA'}</span><h2>{result.score === undefined ? 'Javoblaringiz qabul qilindi' : 'Yakuniy natija'}</h2><p>{result.score === undefined ? 'Javoblar holati quyida.' : 'Ball va o‘rningiz tayyor.'}</p>{result.score !== undefined && <div className="score-summary"><div><strong>{result.score}<small>ball</small></strong><span>To‘plangan ball</span></div><div><strong>{result.rank}<small>-o‘rin</small></strong><span>Reytingdagi o‘rningiz</span></div></div>}<div className="result-counts"><span><i className="result-dot correct" /><strong>{correct}</strong> to‘g‘ri</span><span><i className="result-dot incorrect" /><strong>{wrong}</strong> noto‘g‘ri</span>{pending > 0 && <span><i className="result-dot pending" /><strong>{pending}</strong> tekshirilmoqda</span>}</div></section>
+    <section className={'card result-hero' + (celebrate ? ' submission-success' : '')}>{celebrate && <SubmissionCelebration />}<span className="result-check"><Icon name="check" size={30} /></span><span className="eyebrow">{result.score === undefined ? 'JAVOBLAR TOPSHIRILDI' : 'YAKUNIY NATIJA'}</span><h2>{celebrate ? 'Ajoyib! Test topshirildi.' : result.score === undefined ? 'Javoblaringiz qabul qilindi' : 'Yakuniy natija'}</h2><p>{result.score === undefined ? 'Javoblar holati quyida.' : 'Ball va o‘rningiz tayyor.'}</p>{result.score !== undefined && <div className="score-summary"><div><strong>{result.score}<small>ball</small></strong><span>To‘plangan ball</span></div><div><strong>{result.rank}<small>-o‘rin</small></strong><span>Reytingdagi o‘rningiz</span></div></div>}<div className="result-counts"><span><i className="result-dot correct" /><strong>{correct}</strong> to‘g‘ri</span><span><i className="result-dot incorrect" /><strong>{wrong}</strong> noto‘g‘ri</span>{pending > 0 && <span><i className="result-dot pending" /><strong>{pending}</strong> tekshirilmoqda</span>}</div></section>
     {result.score === undefined && <div className="result-waiting"><span className="stat-icon"><Icon name="clock" size={23} /></span><div><h3>{pending ? 'Ochiq javoblar tekshirilmoqda' : 'O‘qituvchi yakunlashi kutilmoqda'}</h3><p>Ball va o‘rin test yakunlangach ochiladi.</p></div></div>}
-    <section className="card"><div className="section-heading"><h2>Javoblar holati</h2><span className="muted">{result.answers.length} ta savol</span></div><div className="result-grid">{result.answers.map(answer => <div className={'result-cell ' + (answer.correct === null ? 'pending' : answer.correct ? 'correct' : 'incorrect')} key={answer.number} aria-label={`${answer.number}-savol: ${answer.correct === null ? 'tekshirilmoqda' : answer.correct ? 'to‘g‘ri' : 'noto‘g‘ri'}`}><strong>{String(answer.number).padStart(2, '0')}</strong><Icon name={answer.correct === null ? 'clock' : answer.correct ? 'check' : 'close'} size={16} /></div>)}</div><div className="result-legend"><span><i className="result-dot correct" />To‘g‘ri</span><span><i className="result-dot incorrect" />Noto‘g‘ri</span><span><i className="result-dot pending" />Tekshirilmoqda</span></div></section><div className="result-back"><button className="secondary" onClick={back}><Icon name="back" size={17} />Ro‘yxatga qaytish</button></div>
+    <section className="card"><div className="section-heading"><h2>Javoblar holati</h2><span className="muted">{result.answers.length} ta savol</span></div><div className="result-grid">{result.answers.map(answer => <div className={'result-cell ' + (answer.correct === null ? 'pending' : answer.correct ? 'correct' : 'incorrect')} key={answer.number} aria-label={`${answer.number}-savol: ${answer.correct === null ? 'tekshirilmoqda' : answer.correct ? 'to‘g‘ri' : 'noto‘g‘ri'}`}><strong>{String(answer.number).padStart(2, '0')}</strong><Icon name={answer.correct === null ? 'clock' : answer.correct ? 'check' : 'close'} size={16} /></div>)}</div><div className="result-legend"><span><i className="result-dot correct" />To‘g‘ri</span><span><i className="result-dot incorrect" />Noto‘g‘ri</span><span><i className="result-dot pending" />Tekshirilmoqda</span></div></section>{!!explanations.items.length && <section className="card explanation-list"><div className="section-heading"><h2>O‘qituvchi izohlari</h2><Icon name="mic" size={20} /></div><p>Har bir savolning yechimini tinglang.</p>{explanations.items.map(answer => <details key={answer.number}><summary><Icon name="mic" size={17} />{answer.number}-savol izohi<Icon name="chevron" size={16} /></summary><ExplanationPlayer number={answer.number} url={answer.explanation_audio_url!} /></details>)}<PageControls page={explanations.page} pages={explanations.pages} onChange={explanations.setPage} label="Ovozli izohlar sahifalari" /></section>}<div className="result-back"><button className="secondary" onClick={back}><Icon name="back" size={17} />Ro‘yxatga qaytish</button></div>
   </>;
 }
 

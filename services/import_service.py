@@ -26,7 +26,7 @@ def media_root():
 
 
 def media_file(filename):
-    if not re.fullmatch(r"[a-f0-9]{32,64}\.(?:pdf|png|jpg)", filename):
+    if not re.fullmatch(r"[a-f0-9]{32,64}\.(?:pdf|png|jpg|mp3|upload)", filename):
         raise PlatformError("Fayl nomi noto'g'ri.")
     return media_root() / filename
 
@@ -144,6 +144,7 @@ async def extract_chunk(pages, start, end):
     # The provider never establishes authoritative answers, even if it ignores the prompt.
     for q in document.questions:
         q.answer, q.rubric, q.accepted_answers, q.reviewed = "", "", [], False
+        q.explanation_audio = ""  # Only the teacher can attach an actual recording.
         for region in q.media:
             region.asset_id = ""
     for p in document.passages:

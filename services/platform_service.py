@@ -77,12 +77,19 @@ async def retry_import(import_id, owner_id):
 
 async def save_import(import_id, owner_id, document, revision, visibility=None, subject=None, duration_minutes=UNSET):
     parsed = TestDocument.model_validate(document)
+    # A teacher's valid saved answer/rubric is the review action. Do not trust a
+    # client checkbox, and never approve incomplete content or AI imports here.
+    passage_ids = {passage.id for passage in parsed.passages}
+    for question in parsed.questions:
+        question.reviewed = not question.readiness_errors(passage_ids)
     async with get_db_connection() as db:
         await db.execute("BEGIN IMMEDIATE")
         record = await one(db, "SELECT * FROM imports WHERE id = ?", (import_id,))
         require_owner(record, owner_id)
         if record["status"] != "review" or record["revision"] != revision:
             raise PlatformError("Qoralama o'zgargan yoki tahrirlash uchun tayyor emas. Yangilang.", 409)
+        from services.explanation_service import validate_references
+        await validate_references(db, import_id, parsed)
         from services.catalog_service import publication_metadata
         visibility, subject = publication_metadata(visibility if visibility is not None else record["visibility"],
                                                   subject if subject is not None else record["subject"])
@@ -115,6 +122,8 @@ async def publish_import(import_id, owner_id, revision):
             return current["published_test_id"]
         if current["status"] != "review" or current["revision"] != revision:
             raise PlatformError("Qoralama o'zgargan. Yangilang.", 409)
+        from services.explanation_service import validate_references
+        await validate_references(db, import_id, document)
         from services.catalog_service import publisher_name, create_session
         name = await publisher_name(db, owner_id)
         serialized = document.model_dump_json()
@@ -284,10 +293,15 @@ async def submission_result(test_id, user_id):
         sub = await one(db, "SELECT * FROM submissions WHERE test_id = ? AND user_id = ?", (test_id, user_id))
         if not sub:
             return None
-        test = await one(db, "SELECT status FROM tests WHERE id = ?", (test_id,))
-        answers = await rows(db, "SELECT q.question_num AS number, a.is_correct, a.grading_status FROM answers a JOIN questions q ON q.id = a.question_id WHERE a.submission_id = ? ORDER BY q.question_num", (sub["id"],))
+        test = await one(db, "SELECT * FROM tests WHERE id = ?", (test_id,))
+        answers = await rows(db, "SELECT q.question_num AS number, q.content_json, a.is_correct, a.grading_status FROM answers a JOIN questions q ON q.id = a.question_id WHERE a.submission_id = ? ORDER BY q.question_num", (sub["id"],))
     result = {"id": sub["id"], "auto_submitted": bool(sub["auto_submitted"]), "answers": [{"number": a["number"], "status": a["grading_status"],
                "correct": bool(a["is_correct"]) if a["grading_status"] == "done" else None} for a in answers]}
+    # Submission, including automatic expiry, unlocks only this session's audio.
+    for answer, row in zip(result["answers"], answers):
+        audio = json.loads(row["content_json"] or '{}').get('explanation_audio')
+        if audio:
+            answer['explanation_audio_url'] = f"/api/tests/{test['public_id']}/explanations/{audio}"
     if test["status"] == "finished":
         result.update(score=sub["total_score"], rank=sub["rank"], total_correct=sub["total_correct"])
     return result

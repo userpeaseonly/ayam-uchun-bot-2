@@ -383,3 +383,36 @@ async def test_100_concurrent_submissions_lock_once_and_finalize(platform_db):
     assert len(result["submissions"]) == 100
     assert len(result["answers"]) == 500
     assert all(s["rank"] is not None for s in result["submissions"])
+
+
+@pytest.mark.asyncio
+async def test_valid_saved_teacher_answers_are_ready_without_checkbox(platform_db):
+    document = document_data()
+    for question in document['questions']:
+        question['reviewed'] = False
+    import_id = await reviewed_import(document)
+    revision = await platform.save_import(import_id, 111, document, 0)
+    saved = await platform.get_import(import_id, 111)
+    assert all(q['reviewed'] for q in saved['document']['questions'])
+    test_id = await platform.publish_import(import_id, 111, revision)
+    assert (await get_test_by_id(test_id))['status'] == 'active'
+
+
+@pytest.mark.asyncio
+async def test_incomplete_teacher_answers_override_forged_review_flag(platform_db):
+    document = document_data()
+    document['questions'][0]['answer'] = ''
+    document['questions'][1]['passage_id'] = 'missing'
+    document['questions'][-1]['rubric'] = ''
+    import_id = await reviewed_import(document)
+    revision = await platform.save_import(import_id, 111, document, 0)
+    saved = await platform.get_import(import_id, 111)
+    assert [q['reviewed'] for q in saved['document']['questions']] == [False, False, True, True, False]
+    with pytest.raises(platform.PlatformError):
+        await platform.publish_import(import_id, 111, revision)
+    # Fixing the answer and criteria is sufficient; no review flag is needed.
+    fixed = document_data()
+    for question in fixed['questions']:
+        question['reviewed'] = False
+    revision = await platform.save_import(import_id, 111, fixed, revision)
+    assert await platform.publish_import(import_id, 111, revision)

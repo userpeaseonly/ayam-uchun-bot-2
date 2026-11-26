@@ -25,7 +25,7 @@ import re
 from states import AdminStates
 
 
-@router.message(F.text == "✍️ Test topshirish")
+@router.message(F.text.in_({"📚 Basirat testlari", "✍️ Test topshirish"}))
 @router.message(Command("test"))
 async def cmd_join_test(message: Message, state: FSMContext):
     await state.clear()
@@ -39,7 +39,7 @@ async def cmd_join_test(message: Message, state: FSMContext):
             return
 
     if get_mini_app_keyboard():
-        await message.answer("Katalogdan test tanlang yoki o‘qituvchi havolasini oching.", reply_markup=get_mini_app_keyboard())
+        await message.answer("<b>Basirat testlari</b>\nTest tanlang va bilimingizni sinang.", reply_markup=get_mini_app_keyboard(), parse_mode="HTML")
         return
 
     await state.set_state(StudentStates.waiting_for_test_code)
@@ -261,4 +261,3 @@ async def handle_answers_without_test_code(message: Message, state: FSMContext):
             "yoki <b>✍️ Test topshirish</b> tugmasini bosing.",
             parse_mode="HTML"
         )
-

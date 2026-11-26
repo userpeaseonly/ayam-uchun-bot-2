@@ -1,8 +1,12 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 
-export type IconName = 'arrow' | 'back' | 'book' | 'grid' | 'upload' | 'file' | 'image' | 'check' | 'close' | 'chevron' | 'clock' | 'chart' | 'plus' | 'search' | 'help' | 'send' | 'shield' | 'download' | 'refresh' | 'spark' | 'copy' | 'edit' | 'users' | 'logout' | 'settings';
+export type IconName = 'arrow' | 'back' | 'book' | 'grid' | 'upload' | 'file' | 'image' | 'check' | 'close' | 'chevron' | 'clock' | 'chart' | 'plus' | 'search' | 'help' | 'send' | 'shield' | 'download' | 'refresh' | 'spark' | 'copy' | 'edit' | 'users' | 'logout' | 'settings' | 'mic' | 'stop' | 'play' | 'pause';
 const paths: Record<IconName, ReactNode> = {
+  play: <path d="m8 4 12 8-12 8Z" />,
+  pause: <><path d="M8 4v16M16 4v16" /></>,
+  mic: <><rect x="8" y="2" width="8" height="13" rx="4" /><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8" /></>,
+  stop: <rect x="5" y="5" width="14" height="14" rx="2" />,
   arrow: <path d="M5 12h14m-6-6 6 6-6 6" />,
   back: <path d="M19 12H5m6-6-6 6 6 6" />,
   book: <><path d="M12 5v15M3 4c4-1 7 0 9 2 2-2 5-3 9-2v15c-4-1-7 0-9 2-2-2-5-3-9-2Z" /></>,

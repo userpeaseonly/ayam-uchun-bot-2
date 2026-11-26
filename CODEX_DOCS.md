@@ -541,3 +541,76 @@ question format, AI feedback and receipt details use disclosures. Required revie
 checks, ownership, confirmations, timer warnings, payment amounts/consent and
 correctness-first/delayed-final-score behavior remain explicit. These presentation
 changes do not alter the database schema or payment settlement logic.
+
+## 15. Optional question voice explanations
+
+`Question.explanation_audio` is an optional private asset ID (default empty).
+Teacher recordings upload to `POST /api/teacher/imports/{id}/explanations` only
+while that teacher owns a review draft. `explanation_service.py` bounds raw
+uploads, probes real audio, normalizes browser WebM/MP4/Ogg to MP3, and limits
+encoding concurrency to two outside write transactions. FFmpeg and FFprobe are
+required system dependencies in development, CI and the Docker runtime. Input
+protocols are restricted and processing has a timeout. Failed uploads remove
+temporary/output files. The per-import 64 MB quota includes replaced uploads.
+
+Draft save and publication both reject audio from another import or another
+asset kind. AI extraction clears recording references. Published question and
+template snapshots retain audio IDs for reused sessions. No migration is added.
+`student_document` must never include those IDs. Only `submission_result` adds
+`explanation_audio_url`, including for automatic submissions and pending grades;
+score/rank reveal remains unchanged.
+
+`GET /api/tests/{code}/explanations/{asset_id}` checks the authenticated student's
+own submission, exact session, document reference, source import and asset kind
+on every request (including range requests). The generic asset endpoint remains
+owner-only for explanations. Do not weaken this to test status, shared import,
+admin status, another student's submission, or frontend visibility checks.
+
+`VoiceCapture` owns the microphone lifecycle and releases tracks/timers on stop,
+errors, cancellation or unmount, including late permission grants. The editor
+blocks navigation/publishing while recording or uploading; failed uploads can
+retry from the local blob. Backgrounding stops capture and uploads it. Players
+use `preload="none"`, custom play/pause/seek controls and authenticated same-origin URLs;
+CSP permits same-origin media plus local blob previews. Actual microphone
+permissions and recording behavior require Android/iOS Telegram device checks.
+
+## 16. Faster teacher review and content-saving deterrents
+
+Bot onboarding lives in `services/bot_branding.py`. `welcome_text` only reads a
+shared in-memory tip cache; a single managed worker refreshes it through the
+existing DeepSeek REST client with an 8-second/900-token budget once per 24 hours.
+Prepared tips cover cold starts, disabled AI and failures; failed refreshes retry
+after 15 minutes. Names/IDs stay local, output is validated and HTML-escaped,
+and last-good tips survive failed refreshes within the process. A separate
+cancellable worker syncs default/Uzbek pre-Start and profile descriptions only
+when changed and retries transient Telegram errors without blocking polling.
+
+The preparation stepper stays in four aligned columns, including narrow phones.
+Freshly acknowledged student submissions (manual or automatic) show a brief
+brand-color confetti burst and checkmark entrance. Result polling and reopening
+past submissions do not replay it. Decorations are noninteractive, removed after
+3.4 seconds, and disabled for reduced-motion preferences; scores remain subject
+to the normal teacher-finalization rules.
+
+Saving a draft through `save_import` derives each `reviewed` flag from
+`Question.readiness_errors`: complete question text, valid passage references,
+choices/key or open-answer criteria. Client review flags cannot approve missing
+content. AI extraction still clears answer keys/rubrics/review status; publishing
+still checks every question and overall document structure. There is no extra
+manual checkbox. `prepareReview` / `questionIssues` mirror readiness in the UI;
+tests cover automatic approval, invalid keys and multipart criteria.
+
+Questions initially use a compact preview with one-tap answer-key choices;
+editing fields open on demand, with open-answer criteria initially expanded.
+Previous/next and question-map navigation await draft saving before moving and
+retain the current question on failure. Voice activity blocks navigation and
+publishing. The global header and bottom navigation remain untouched.
+
+`AudioPlayer` exposes only play/pause and seeking, pauses other players, and has
+no native download/overflow/cast menu. `ProtectedTest` scopes copying, context
+menu, drag and save/print deterrents to student attempts/results; typed-answer
+editing remains available. Print CSS hides test content. These measures do NOT
+prevent OS screenshots, screen recording, browser tools or extraction of already
+delivered media. Do not describe them as DRM or guaranteed download protection,
+or invent a Telegram screenshot-blocking API. Backend submission/ownership
+checks remain mandatory regardless of frontend restrictions.

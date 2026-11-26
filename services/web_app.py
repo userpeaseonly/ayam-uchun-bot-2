@@ -57,7 +57,7 @@ async def security(request, handler):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["Cache-Control"] = "no-store" if request.path.startswith("/api/") else "no-cache"
-    response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self'; object-src 'none'; base-uri 'self'"
+    response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'self'"
     return response
 
 
@@ -256,6 +256,24 @@ async def import_action(request):
     return web.json_response({"test_id": test_id, "code": test["code"]})
 
 
+async def upload_explanation(request):
+    from services import explanation_service as explanations
+    import_id, owner = request.match_info['import_id'], user(request)['id']
+    await explanations.require_editable(import_id, owner)
+    audio = bytearray()
+    async for chunk in request.content.iter_chunked(64 * 1024):
+        audio.extend(chunk)
+        if len(audio) > explanations.MAX_AUDIO_BYTES:
+            raise platform.PlatformError('Ovozli izoh 8 MB dan oshmasligi kerak.', 413)
+    return web.json_response(await explanations.store_recording(import_id, owner, bytes(audio)), status=201)
+
+
+async def student_explanation(request):
+    from services.explanation_service import submitted_recording
+    audio = await submitted_recording(request.match_info['code'], request.match_info['asset_id'], user(request)['id'])
+    return web.FileResponse(media_file(audio['filename']), headers={'Content-Type': audio['mime']})
+
+
 async def student_test(request):
     return web.json_response(await platform.test_for_student(request.match_info["code"], user(request)["id"]))
 
@@ -442,6 +460,7 @@ def create_web_app():
         web.post("/api/payments/orders/{order_id}/refund", refund_payment),
         web.put("/api/profile", publisher_profile), web.get("/api/catalog", discover),
         web.get("/api/tests/{code}/intro", introduction),
+        web.get("/api/tests/{code}/explanations/{asset_id}", student_explanation),
         web.get("/api/admin/imports", imports), web.post("/api/admin/imports", imports),
         web.get("/api/admin/imports/{import_id}", import_detail), web.put("/api/admin/imports/{import_id}", import_detail),
         web.post("/api/admin/imports/{import_id}/{action}", import_action),
@@ -457,6 +476,7 @@ def create_web_app():
     teacher_routes = [
         web.get("/api/teacher/imports", imports), web.post("/api/teacher/imports", imports),
         web.get("/api/teacher/imports/{import_id}", import_detail), web.put("/api/teacher/imports/{import_id}", import_detail),
+        web.post("/api/teacher/imports/{import_id}/explanations", upload_explanation),
         web.post("/api/teacher/imports/{import_id}/{action}", import_action),
         web.get("/api/teacher/tests", admin_tests), web.get("/api/teacher/tests/{test_id}/results", results),
         web.get("/api/teacher/tests/{test_id}/report", report),
