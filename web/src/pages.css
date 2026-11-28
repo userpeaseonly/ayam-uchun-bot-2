@@ -271,3 +271,7 @@ button.profile-teacher-link:hover:not(:disabled) { background: #f1e1eb; }
 .refined-ui main .question-settings[open] > summary { margin-bottom: 12px; }
 .refined-ui main .format-help { margin: 0 0 14px; }
 .refined-ui main .format-help > summary { min-height: 32px; font-size: 11px; color: #796272; }
+.scoring-note { border-left: 3px solid var(--plum, #571f3f); margin-block: 1rem; }
+.scoring-note > strong { color: var(--plum, #571f3f); }
+.scoring-note > p { margin: .5rem 0; }
+.scoring-note .scoring-help { margin-bottom: 0; }

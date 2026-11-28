@@ -200,7 +200,9 @@ async def test_teacher_cannot_change_clock_or_finish_while_students_are_working(
     timer_db.value += 60
     await run_test_analytics_and_scoring(test['id'], finish=True, owner_id=101)
     result = await platform.submission_result(test['id'], 10)
-    assert result['auto_submitted'] and result['score'] == 0 and result['rank'] == 1
+    assert result['auto_submitted'] and result['total_correct'] == 0
+    assert result['score'] is None and result['rank'] is None
+    assert result['scoring']['status'] == 'unavailable'
 
 
 @pytest.mark.asyncio

@@ -10,7 +10,7 @@
 
 ### Core Problem Solved
 Traditional Telegram quiz bots only handle closed multiple-choice questions with flat points (e.g. 1 point each). This bot:
-1. **Dynamic 3-Tier Difficulty Scoring**: Automatically scales closed question points (1.1, 1.7, 2.5 points) after all students submit, based on the real success rate across the cohort. Easiest questions earn 1.1 pts; hardest questions earn 2.5 pts.
+1. **Versioned Rasch practice scoring**: New tests use dichotomous 1PL MML/EAP estimation and local-cohort T-scores with uncertainty disclosures. Migration 7 keeps all existing assessments on legacy tertile scoring. Never rescore finalized results. [Scoring contract and validation](docs/rasch-scoring.md) supersedes the legacy scoring descriptions below for `scoring_method=rasch_v1`.
 2. **AI-Graded Open Questions**: Allows up to 9 open-ended text questions evaluated in Uzbek by DeepSeek / Gemini AI according to a custom teacher rubric.
 3. **Student-Friendly Submissions**: Parses answers flexibly from a single message (e.g. `1:A, 2:B, 3:D, 4: qizil ishton keldi...`).
 4. **Two-Stage Reveal**: Students get immediate ✅/❌ feedback upon submission, but exact points and leaderboard rankings remain hidden until the teacher officially finishes the test.
@@ -111,7 +111,10 @@ erDiagram
 
 ---
 
-## 4. Dynamic 3-Tier Scoring Algorithm (`services/scoring_service.py`)
+## 4. Legacy Dynamic 3-Tier Scoring Algorithm (`services/scoring_service.py`)
+
+This section applies only to `scoring_method=legacy_tertile`. New tests use
+`services/rasch.py`; see [the versioned Rasch contract](docs/rasch-scoring.md).
 
 ### Tertile Distribution Formula
 When an admin finishes a test (`finish_test:<test_id>`):
@@ -350,7 +353,16 @@ Implemented platform behavior:
   question content, so reuse does not mix cohorts or tertile rankings. Preserve
   the existing correctness-first, final-score-after-closing policy.
 
-### Future access pricing
+### Basirat exam-position practice
+
+`Mavzulashtirilgan` is a separate, untimed, repeatable practice bank grouped by
+original exam question number. Only `ADMIN_IDS` curates brand-owned document
+tests into the single brand bank. Normal teachers' public/unlisted assessments
+remain available. Practice must not create exam submissions, timer attempts,
+Rasch scores or rankings. See [practice-bank.md](docs/practice-bank.md) for the
+schema, API/publishing behavior and future collection boundary.
+
+### Future access pricing (deferred)
 
 Paid test access is deferred. The standard future price is **5,000 UZS**
 per test, persisted in `test_templates.price_uzs`. Charging is disabled and all

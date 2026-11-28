@@ -80,13 +80,20 @@ async def notify(target, bot):
             pass
         return
     async with get_db_connection() as db:
-        sub = await one(db, "SELECT s.*, t.code, t.title, t.status FROM submissions s JOIN tests t ON t.id = s.test_id WHERE s.id = ?", (sub_id,))
+        sub = await one(db, "SELECT s.*, t.code, t.title, t.status, t.scoring_method FROM submissions s JOIN tests t ON t.id = s.test_id WHERE s.id = ?", (sub_id,))
     if not sub:
         return
     if kind == "final":
+        if sub["scoring_method"] == "rasch_v1":
+            outcome = (f"⭐ Mashq natijasi: {sub['total_score']} T-ball\n🏆 O'rin: {sub['rank']}\n"
+                       "Rash modeli bo‘yicha taxmin. Rasmiy sertifikat bali emas."
+                       if sub["total_score"] is not None else
+                       "Rash bahosi uchun ma’lumot yetarli emas. To‘g‘ri javoblaringiz saqlandi.")
+        else:
+            outcome = f"⭐ Ball: {sub['total_score']}\n🏆 O'rin: {sub['rank']}"
         text = (f"🏁 <b>{html.escape(sub['code'])}: {html.escape(sub['title'])}</b>\n"
                 f"✅ To'g'ri javoblar: {sub['total_correct']}\n"
-                f"⭐ Ball: {sub['total_score']}\n🏆 O'rin: {sub['rank']}")
+                + outcome)
     else:
         from services.platform_service import submission_result
         result = await submission_result(sub["test_id"], sub["user_id"])
@@ -115,6 +122,9 @@ async def execute_job(job, bot=None):
                 return
         elif job["kind"] == "grade":
             await grade_answer(int(job["target"]))
+        elif job["kind"] == "practice_grade":
+            from services.practice_service import grade_check
+            await grade_check(int(job["target"]))
         elif job["kind"] == "notify":
             await notify(job["target"], bot)
         async with get_db_connection() as db:

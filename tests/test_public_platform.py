@@ -94,7 +94,8 @@ async def test_public_discovery_unlisted_links_and_personal_history(public_db):
     assert own['score'] is None and own['rank'] is None
     await run_test_analytics_and_scoring(hidden['id'], finish=True, owner_id=9002)
     own = (await catalog.list_tests(10, scope='results'))['items'][0]
-    assert own['score'] > 0 and own['rank'] == 1
+    assert own['score'] is None and own['rank'] is None
+    assert own['scoring_method'] == 'rasch_v1' and own['status'] == 'finished'
     assert not (await catalog.list_tests(11, scope='results'))['items']
 
 
@@ -118,7 +119,8 @@ async def test_new_sessions_reuse_content_without_mixing_cohorts(public_db):
         assert not await platform.one(db, 'SELECT id FROM submissions WHERE test_id = ?', (a,))
     await platform.submit_answers(a, {'id': 10}, {'1': 'B'})
     await run_test_analytics_and_scoring(a, finish=True, owner_id=9001)
-    assert (await platform.submission_result(a, 10))['score'] == 0
+    result = await platform.submission_result(a, 10)
+    assert result['score'] is None and result['scoring']['status'] == 'unavailable'
     assert await platform.submission_result(first['id'], 10) == original
     assert len((await catalog.list_tests(10, scope='results'))['items']) == 2
 

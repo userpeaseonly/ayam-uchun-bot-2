@@ -57,6 +57,7 @@ async def test_full_scoring_flow(tmp_path, monkeypatch):
         created_by=111,
         total_questions=6,
         open_questions_count=1,
+        scoring_method="legacy_tertile",
     )
 
     # Add 5 closed questions

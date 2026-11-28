@@ -304,6 +304,8 @@ async def submission_result(test_id, user_id):
             answer['explanation_audio_url'] = f"/api/tests/{test['public_id']}/explanations/{audio}"
     if test["status"] == "finished":
         result.update(score=sub["total_score"], rank=sub["rank"], total_correct=sub["total_correct"])
+        from services.rasch import public_scoring
+        result["scoring"] = public_scoring(test)
     return result
 
 
@@ -318,9 +320,13 @@ async def teacher_results(test_id, owner_id):
         answers = await rows(db, "SELECT a.*, q.question_num FROM answers a JOIN questions q ON q.id = a.question_id WHERE q.test_id = ? ORDER BY a.submission_id, q.question_num", (test_id,))
         questions = await rows(db, "SELECT * FROM questions WHERE test_id = ? ORDER BY question_num", (test_id,))
     test.pop("document_json", None)
+    from services.rasch import public_scoring
+    scoring = public_scoring(test)
+    # The immutable calibration is for audit/export, not repeated polling.
+    test.pop("scoring_json", None)
     from services.catalog_service import summary
     test.update(await summary(test_id, owner_id))
-    return {"test": test, "submissions": submissions, "answers": answers, "questions": questions}
+    return {"test": test, "submissions": submissions, "answers": answers, "questions": questions, "scoring": scoring}
 
 
 async def override_answer(test_id, owner_id, answer_id, correct, feedback):

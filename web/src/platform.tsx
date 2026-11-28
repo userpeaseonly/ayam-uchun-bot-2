@@ -4,6 +4,7 @@ import type { AttemptTimer, CatalogPage, Profile, StudentTest, Submission, TestS
 import { Alert, Badge, EmptyState, Icon, Loading, PageHeading, useTelegramBack } from './ui';
 import { useAttemptTimer } from './useAttemptTimer';
 import { formatCountdown } from './timer';
+import { scoreUnit } from './scoring';
 
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : 'Amal bajarilmadi.';
 export const visibilityLabel = (value: Visibility) => value === 'public' ? 'Ochiq' : 'Havola orqali';
@@ -65,7 +66,7 @@ function ResumeClock({ handle, status, settled }: { handle: string; status: { ti
   return <span aria-label={clock.seconds === null ? 'Javoblar saqlangan' : 'Qolgan vaqt: ' + formatCountdown(clock.seconds)} className={'resume-time ' + (clock.seconds !== null && clock.seconds <= 60 ? 'urgent' : '')}>{clock.seconds === null ? 'Saqlangan' : clock.expired ? 'Vaqt tugadi' : formatCountdown(clock.seconds)}{clock.problem && <span title={clock.problem}> · Ulanish kutilmoqda</span>}</span>;
 }
 
-export function StudentCatalog({ firstName, section, initialHandle, onFocus, renderAttempt }: { firstName: string; section: 'tests' | 'results'; initialHandle: string | null; onFocus(value: boolean): void; renderAttempt(test: StudentTest, back: () => void, done: () => void): ReactNode }) {
+export function StudentCatalog({ firstName, section, initialHandle, onFocus, renderAttempt, onPractice }: { onPractice(): void; firstName: string; section: 'tests' | 'results'; initialHandle: string | null; onFocus(value: boolean): void; renderAttempt(test: StudentTest, back: () => void, done: () => void): ReactNode }) {
   const scope = section === 'results' ? 'results' : 'public';
   const [query, setQuery] = useState('');
   const [page, setPage] = useState<CatalogPage>({ items: [], subjects: [], next_cursor: null });
@@ -145,6 +146,7 @@ export function StudentCatalog({ firstName, section, initialHandle, onFocus, ren
   const personalMessage = featured?.duration_minutes != null ? `${firstName}, sinov vaqti davom etmoqda.` : featured ? `${firstName}, mashqni davom ettiramizmi?` : `${firstName}, navbatdagi sinovga tayyormisiz?`;
   return <div className={section === 'tests' ? 'catalog-home' : 'catalog-results'}>
     {section === 'tests' ? <div className="catalog-greeting"><span className="greeting-symbol"><Icon name="spark" size={20} /></span><h1>{personalMessage}</h1></div> : <PageHeading icon="chart" title="Natijalarim" />}
+    {section === 'tests' && <button className="practice-entry" onClick={onPractice}><Icon name="grid" size={23} /><span><strong>Mavzulashtirilgan</strong><small>Imtihon savollari · Vaqtsiz mashq</small></span><Icon name="arrow" size={18} /></button>}
     <section className="catalog-toolbar" aria-label="Test qidirish"><label className="search-field"><Icon name="search" size={18} /><input type="search" value={query} onChange={event => search(event.target.value)} aria-label="Test yoki ustozni qidirish" placeholder="Test yoki ustozni qidirish" /></label></section>
     {section === 'tests' && <>
       {resumeError && <Alert tone="warning">Boshlangan testlar yuklanmadi.<button className="quiet" onClick={() => void loadResumable()}>Qayta urinish</button></Alert>}
@@ -155,10 +157,10 @@ export function StudentCatalog({ firstName, section, initialHandle, onFocus, ren
     </>}
     {error && <Alert>{error}<button className="quiet" onClick={() => void load()}>Qayta urinish</button></Alert>}
     {busy ? <Loading label="Testlar yuklanmoqda…" /> : !page.items.length && !error ? <section className="card"><EmptyState icon={scope === 'results' ? 'chart' : 'book'} title={scope === 'results' ? 'Hali natijalar yo‘q' : 'Test topilmadi'}>{query ? 'Boshqa nom bilan qidiring.' : scope === 'public' ? 'Testlar shu yerda ko‘rinadi.' : 'Topshirgan testlaringiz shu yerda ko‘rinadi.'}</EmptyState></section> : <div className="catalog-grid" aria-label={section === 'tests' ? 'Testlar ro‘yxati' : 'Natijalar ro‘yxati'}>{page.items.map(test => <button className="card catalog-card" key={test.id} onClick={() => { if (test.submission_id || test.draft_revision != null) void resume(test.public_id); else setSelected(test.public_id); }}>
-      {scope === 'results' && <span className={'badge ' + (test.score == null ? 'status-processing' : 'status-published')}>{test.score == null ? 'Ball kutilmoqda' : 'Natija tayyor'}</span>}
+      {scope === 'results' && <span className={'badge ' + (test.score == null ? 'status-processing' : 'status-published')}>{test.status === 'finished' ? test.score == null ? 'Javoblar tayyor' : 'Natija tayyor' : 'Ball kutilmoqda'}</span>}
       <h2>{test.title}</h2><p className="publisher-name"><Icon name="users" size={15} />{test.publisher_name}</p>
-      {scope === 'results' && test.score != null && <div className="result-card-score"><strong>{test.score}<small> ball</small></strong><span>{test.rank}-o‘rin</span></div>}
-      <div className="catalog-card-bottom"><div className="catalog-meta"><span><Icon name="file" size={14} />{test.total_questions} savol</span><span><Icon name="clock" size={14} />{test.duration_minutes ? `${test.duration_minutes} daq.` : 'Cheklanmagan'}</span></div><span className="catalog-card-action">{test.submission_id ? test.score == null ? 'Javoblar' : 'Natijani ko‘rish' : test.draft_revision != null ? test.duration_minutes !== null ? 'Qaytish' : 'Davom etish' : 'Boshlash'}<Icon name="arrow" size={16} /></span></div>
+      {scope === 'results' && test.score != null && <div className="result-card-score"><strong>{test.score}<small> {scoreUnit(test.scoring_method)}</small></strong><span>{test.rank}-o‘rin</span></div>}
+      <div className="catalog-card-bottom"><div className="catalog-meta"><span><Icon name="file" size={14} />{test.total_questions} savol</span><span><Icon name="clock" size={14} />{test.duration_minutes ? `${test.duration_minutes} daq.` : 'Cheklanmagan'}</span></div><span className="catalog-card-action">{test.submission_id ? test.status === 'finished' ? 'Natijani ko‘rish' : 'Javoblar' : test.draft_revision != null ? test.duration_minutes !== null ? 'Qaytish' : 'Davom etish' : 'Boshlash'}<Icon name="arrow" size={16} /></span></div>
     </button>)}</div>}
     {(pageIndex > 0 || page.next_cursor) && <nav className="catalog-pagination" aria-label="Test sahifalari"><button className="secondary" disabled={busy || pageIndex === 0} onClick={() => setPageIndex(value => value - 1)}><Icon name="back" size={16} />Oldingi</button><span aria-live="polite">{pageIndex + 1}-sahifa</span><button className="secondary" disabled={busy || !page.next_cursor} onClick={() => { if (page.next_cursor) { setCursors(previous => [...previous.slice(0, pageIndex + 1), page.next_cursor]); setPageIndex(value => value + 1); } }}>Keyingi<Icon name="arrow" size={16} /></button></nav>}
   </div>;

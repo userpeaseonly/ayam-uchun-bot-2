@@ -93,7 +93,8 @@ async def test_migration_is_repeatable_and_preserves_existing_data(platform_db):
     await init_db()
     assert (await get_test_by_id(test["id"]))["code"] == test["code"]
     async with get_db_connection() as db:
-        assert (await platform.one(db, "SELECT COUNT(*) AS n FROM schema_migrations"))["n"] == 6
+        from scripts.database.migrations import MIGRATIONS
+        assert (await platform.one(db, "SELECT COUNT(*) AS n FROM schema_migrations"))["n"] == len(MIGRATIONS)
 
 
 @pytest.mark.asyncio
@@ -252,7 +253,8 @@ async def test_teacher_override_wins_race_and_finalization_is_idempotent(platfor
     await run_test_analytics_and_scoring(test["id"], finish=True, owner_id=111)
     await run_test_analytics_and_scoring(test["id"], finish=True, owner_id=111)
     result = await platform.submission_result(test["id"], 9001)
-    assert result["score"] > 0 and result["rank"] == 1
+    assert result["score"] is None and result["rank"] is None
+    assert result["scoring"]["status"] == "unavailable"  # One student cannot calibrate a cohort.
     async with get_db_connection() as db:
         assert (await platform.one(db, "SELECT COUNT(*) AS n FROM jobs WHERE kind = 'notify' AND target LIKE 'final:%'"))["n"] == 1
     with pytest.raises(platform.PlatformError):
@@ -271,7 +273,7 @@ async def test_close_submission_race_has_consistent_cohort(platform_db):
         assert isinstance(outcomes[0], platform.PlatformError)
         assert (await platform.teacher_results(test["id"], 111))["submissions"] == []
     else:
-        assert (await platform.submission_result(test["id"], 9001))["rank"] == 1
+        assert (await platform.submission_result(test["id"], 9001))["scoring"]["status"] == "unavailable"
 
 
 @pytest.mark.asyncio
@@ -375,9 +377,10 @@ async def test_import_context_questions_do_not_duplicate_batch_boundaries(platfo
 @pytest.mark.asyncio
 async def test_100_concurrent_submissions_lock_once_and_finalize(platform_db):
     test = await published_test()
-    # All closed answers plus a deliberately blank open answer: no paid network calls.
+    # Varied closed answers permit calibration; blank open answers avoid network calls.
     values = {"1": "A", "2": "B", "3": "A", "4": "F"}
-    await asyncio.gather(*(platform.submit_answers(test["id"], {"id": 10000 + i}, values) for i in range(100)))
+    await asyncio.gather(*(platform.submit_answers(test["id"], {"id": 10000 + i},
+        {number: value if i & (1 << j) else 'C' for j, (number, value) in enumerate(values.items())}) for i in range(100)))
     await run_test_analytics_and_scoring(test["id"], finish=True, owner_id=111)
     result = await platform.teacher_results(test["id"], 111)
     assert len(result["submissions"]) == 100

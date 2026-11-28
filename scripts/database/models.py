@@ -7,15 +7,16 @@ async def create_test(
     title: str,
     created_by: int,
     total_questions: int,
-    open_questions_count: int
+    open_questions_count: int,
+    *, scoring_method: str = "rasch_v1",
 ) -> int:
     async with get_db_connection() as db:
         cursor = await db.execute(
             """
-            INSERT INTO tests (code, title, created_by, total_questions, open_questions_count, status, public_id)
-            VALUES (?, ?, ?, ?, ?, 'active', lower(hex(randomblob(16))))
+            INSERT INTO tests (code, title, created_by, total_questions, open_questions_count, status, public_id, scoring_method)
+            VALUES (?, ?, ?, ?, ?, 'active', lower(hex(randomblob(16))), ?)
             """,
-            (code.upper(), title, created_by, total_questions, open_questions_count),
+            (code.upper(), title, created_by, total_questions, open_questions_count, scoring_method),
         )
         await db.commit()
         return cursor.lastrowid

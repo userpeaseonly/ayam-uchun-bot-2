@@ -306,7 +306,7 @@ async def cb_finish_test(callback: CallbackQuery, bot: Bot):
     await callback.answer("Ballar hisoblanmoqda va hisobot tayyorlanmoqda...")
     await callback.message.edit_text("⏳ <i>Natijalar hisoblanmoqda va taqsimlanmoqda...</i>", parse_mode="HTML")
 
-    # 1. Run Analytics & tertile scoring
+    # 1. Finalize with the assessment's versioned scoring method.
     try:
         analytics = await run_test_analytics_and_scoring(test_id, finish=True, owner_id=callback.from_user.id)
     except PlatformError as error:
@@ -329,13 +329,16 @@ async def cb_finish_test(callback: CallbackQuery, bot: Bot):
             "hard": "🔴 2.5 ball (qiyin)",
             "open": "🤖 2.5 ball (ochiq)",
         }.get(q["assigned_tier"], f"{q['assigned_points']} ball")
+        if test["scoring_method"] == "rasch_v1":
+            difficulty = q.get("difficulty_logit")
+            tier_symbol = f"qiyinlik {difficulty:.2f} logit" if difficulty is not None else "kalibrlash uchun ma’lumot yetarli emas"
         q_tier_summary.append(f"• {q['question_num']}-savol: {tier_symbol} ({q.get('correct_count', 0)} ta to'g'ri)")
 
     admin_summary = (
         f"🏁 <b>Test muvaffaqiyatli yakunlandi!</b>\n\n"
         f"📌 <b>Test:</b> {test['code']} - {test['title']}\n"
         f"👥 <b>Qatnashchilar:</b> {len(submissions)} nafar\n\n"
-        f"📊 <b>Savollar bo'yicha berilgan ballar:</b>\n"
+        + ("📊 <b>Rash modeli — mashq natijasi:</b>\n" if test["scoring_method"] == "rasch_v1" else "📊 <b>Savollar bo'yicha berilgan ballar:</b>\n")
         + "\n".join(q_tier_summary[:15])  # show first 15 in message to avoid length limits
     )
     if len(q_tier_summary) > 15:

@@ -151,6 +151,55 @@ MIGRATIONS = [
             PRIMARY KEY(transaction_id,kind)
         )""",
     ],
+    [
+        # Existing assessments keep their original scoring contract. Only new
+        # creation paths explicitly opt into Rasch; never rescore old results.
+        "ALTER TABLE tests ADD COLUMN scoring_method TEXT NOT NULL DEFAULT 'legacy_tertile' CHECK(scoring_method IN ('legacy_tertile','rasch_v1'))",
+        "ALTER TABLE tests ADD COLUMN scoring_json TEXT",
+        "ALTER TABLE questions ADD COLUMN difficulty_logit REAL",
+        "ALTER TABLE questions ADD COLUMN infit REAL",
+        "ALTER TABLE submissions ADD COLUMN rasch_theta REAL",
+        "ALTER TABLE submissions ADD COLUMN rasch_se REAL",
+    ],
+    [
+        """CREATE TABLE practice_banks (
+            id TEXT PRIMARY KEY, title TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('brand','teacher')),
+            owner_id INTEGER
+        )""",
+        "INSERT INTO practice_banks(id,title,kind) VALUES ('basirat','Mavzulashtirilgan','brand')",
+        """CREATE TABLE practice_sources (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, bank_id TEXT NOT NULL REFERENCES practice_banks(id),
+            template_id INTEGER NOT NULL REFERENCES test_templates(id), source_test_id INTEGER NOT NULL REFERENCES tests(id),
+            title TEXT NOT NULL, publisher_name TEXT NOT NULL, document_json TEXT NOT NULL,
+            enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)), created_by INTEGER NOT NULL,
+            UNIQUE(bank_id,template_id)
+        )""",
+        """CREATE TABLE practice_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, source_id INTEGER NOT NULL REFERENCES practice_sources(id),
+            number INTEGER NOT NULL, question_json TEXT NOT NULL, passage_json TEXT,
+            UNIQUE(source_id,number)
+        )""",
+        "CREATE INDEX idx_practice_number ON practice_items(number,id)",
+        """CREATE TABLE practice_progress (
+            user_id INTEGER NOT NULL, item_id INTEGER NOT NULL REFERENCES practice_items(id),
+            answer_json TEXT NOT NULL DEFAULT '\"\"', revision INTEGER NOT NULL DEFAULT 0,
+            last_check_id INTEGER,
+            PRIMARY KEY(user_id,item_id)
+        )""",
+        """CREATE TABLE practice_checks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
+            item_id INTEGER NOT NULL REFERENCES practice_items(id), request_key TEXT NOT NULL,
+            answer_json TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('pending','done')),
+            is_correct INTEGER, feedback TEXT, created_at REAL NOT NULL,
+            UNIQUE(user_id,request_key)
+        )""",
+        "CREATE INDEX idx_practice_checks_user ON practice_checks(user_id,item_id,id)",
+        """CREATE TABLE practice_positions (
+            user_id INTEGER NOT NULL, bank_id TEXT NOT NULL REFERENCES practice_banks(id), number INTEGER NOT NULL,
+            item_id INTEGER NOT NULL REFERENCES practice_items(id), updated_at REAL NOT NULL,
+            PRIMARY KEY(user_id,bank_id,number)
+        )""",
+    ],
 ]
 
 

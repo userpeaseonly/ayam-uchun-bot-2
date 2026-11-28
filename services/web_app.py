@@ -392,6 +392,45 @@ async def publisher_profile(request):
     return web.json_response(await catalog.save_profile(user(request)["id"], data.get("full_name")))
 
 
+async def practice_grid(request):
+    from services import practice_service as practice
+    return web.json_response(await practice.grid(user(request)['id']))
+
+
+async def practice_open(request):
+    from services import practice_service as practice
+    data = await body(request)
+    return web.json_response(await practice.open_number(int(request.match_info['number']), user(request)['id'], data.get('item_id')))
+
+
+async def practice_item(request):
+    from services import practice_service as practice
+    item_id, user_id = int(request.match_info['item_id']), user(request)['id']
+    if request.method == 'GET':
+        return web.json_response(await practice.question(item_id, user_id))
+    data = await body(request)
+    if request.method == 'PUT':
+        return web.json_response(await practice.save_answer(item_id, user_id, data.get('answer'), data.get('revision')))
+    if request.match_info['action'] == 'retry':
+        return web.json_response(await practice.retry_check(item_id, user_id))
+    return web.json_response(await practice.check_answer(item_id, user_id, data.get('answer'), data.get('revision'), data.get('request_key')))
+
+
+async def practice_media(request):
+    from services import practice_service as practice
+    record = await practice.asset(int(request.match_info['item_id']), request.match_info['asset_id'], user(request)['id'])
+    return web.FileResponse(media_file(record['filename']), headers={'Content-Type': record['mime']})
+
+
+async def practice_source(request):
+    from services import practice_service as practice
+    test_id, user_id = int(request.match_info['test_id']), user(request)['id']
+    if request.method == 'GET':
+        return web.json_response(await practice.source_status(test_id, user_id))
+    data = await body(request)
+    return web.json_response(await practice.set_source(test_id, user_id, data.get('enabled')))
+
+
 async def discover(request):
     scope = request.query.get("scope", "public")
     if scope not in ("public", "drafts", "results"):
@@ -460,6 +499,12 @@ def create_web_app():
         web.get("/api/payments/orders/{order_id}", payment_order),
         web.post("/api/payments/orders/{order_id}/refund", refund_payment),
         web.put("/api/profile", publisher_profile), web.get("/api/catalog", discover),
+        web.get('/api/practice/grid', practice_grid),
+        web.post('/api/practice/numbers/{number:[0-9]+}/open', practice_open),
+        web.get('/api/practice/items/{item_id:[0-9]+}', practice_item),
+        web.put('/api/practice/items/{item_id:[0-9]+}', practice_item),
+        web.post('/api/practice/items/{item_id:[0-9]+}/{action:check|retry}', practice_item),
+        web.get('/api/practice/items/{item_id:[0-9]+}/assets/{asset_id}', practice_media),
         web.get("/api/tests/{code}/intro", introduction),
         web.get("/api/tests/{code}/explanations/{asset_id}", student_explanation),
         web.get("/api/admin/imports", imports), web.post("/api/admin/imports", imports),
@@ -481,6 +526,8 @@ def create_web_app():
         web.post("/api/teacher/imports/{import_id}/{action}", import_action),
         web.get("/api/teacher/tests", admin_tests), web.get("/api/teacher/tests/{test_id}/results", results),
         web.get("/api/teacher/tests/{test_id}/report", report),
+        web.get('/api/teacher/tests/{test_id}/practice', practice_source),
+        web.put('/api/teacher/tests/{test_id}/practice', practice_source),
         web.post("/api/teacher/tests/{test_id}/answers/{answer_id}", override),
         web.post("/api/teacher/tests/{test_id}/{action}", test_action),
     ]

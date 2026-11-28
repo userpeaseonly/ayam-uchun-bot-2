@@ -1,4 +1,5 @@
 import os
+import json
 from typing import Dict, Any, List
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -27,6 +28,8 @@ async def generate_test_report_excel(test_id: int) -> str:
     questions = await get_questions_for_test(test_id)
     submissions = await get_submissions_for_test(test_id)
     all_answers = await get_all_answers_for_test(test_id)
+    rasch = test.get("scoring_method") == "rasch_v1"
+    calibration = json.loads(test.get("scoring_json") or "{}") if rasch else {}
 
     # Prepare directories
     reports_dir = os.path.join(os.getcwd(), "reports")
@@ -57,6 +60,9 @@ async def generate_test_report_excel(test_id: int) -> str:
         "Umumiy Ball",
         "Topshirilgan vaqt"
     ]
+    if rasch:
+        headers1[5] = "Mashq natijasi (T-ball)"
+        headers1 += ["Qobiliyat (logit)", "Posterior SD (logit)"]
     for col_idx, h in enumerate(headers1, 1):
         style_header_cell(ws1.cell(row=1, column=col_idx), h, "1E3D59")
 
@@ -65,7 +71,7 @@ async def generate_test_report_excel(test_id: int) -> str:
         username = f"@{sub['username']}" if sub.get('username') else "-"
         
         row_data = [
-            sub.get("rank") or (row_idx - 1),
+            sub.get("rank") if rasch else sub.get("rank") or (row_idx - 1),
             name,
             username,
             sub["user_id"],
@@ -73,6 +79,8 @@ async def generate_test_report_excel(test_id: int) -> str:
             sub.get("total_score", 0.0),
             sub.get("submitted_at", "")
         ]
+        if rasch:
+            row_data += [sub.get("rasch_theta"), sub.get("rasch_se")]
         for col_idx, val in enumerate(row_data, 1):
             cell = ws1.cell(row=row_idx, column=col_idx, value=val)
             cell.border = thin_border
@@ -96,6 +104,8 @@ async def generate_test_report_excel(test_id: int) -> str:
         "Qiyinlik Darajasi",
         "Belgilangan Ball"
     ]
+    if rasch:
+        headers2[-2:] = ["Qiyinlik (logit)", "Infit (EAP, tavsifiy)"]
     for col_idx, h in enumerate(headers2, 1):
         style_header_cell(ws2.cell(row=1, column=col_idx), h, "175873")
 
@@ -125,6 +135,8 @@ async def generate_test_report_excel(test_id: int) -> str:
             tier_str,
             pts
         ]
+        if rasch:
+            row_data[-2:] = [q.get("difficulty_logit"), q.get("infit")]
         for col_idx, val in enumerate(row_data, 1):
             cell = ws2.cell(row=row_idx, column=col_idx, value=val)
             cell.border = thin_border
@@ -179,12 +191,40 @@ async def generate_test_report_excel(test_id: int) -> str:
                 cell.border = thin_border
                 cell.alignment = Alignment(horizontal="center", vertical="center")
 
+    if rasch:
+        audit = wb.create_sheet(title="Rash metodikasi")
+        for label, value in [
+            ("Natija", "Rash modeli asosidagi mashq natijasi; rasmiy sertifikat bali emas"),
+            ("Versiya", calibration.get("version")),
+            ("Holat", calibration.get("status", "pending")),
+            ("Model", "1PL; diskriminatsiya = 1; MML N(0,1); EAP"),
+            ("Qatnashchilar", calibration.get("participants")),
+            ("Kalibrlangan savollar", calibration.get("informative_items")),
+            ("Konvergensiya", calibration.get("converged")),
+            ("Iteratsiyalar", calibration.get("iterations")),
+            ("O‘rtacha theta", calibration.get("mean")),
+            ("Theta standart tafovuti", calibration.get("sd")),
+            ("EAP ishonchliligi (tavsifiy)", calibration.get("eap_reliability")),
+            ("Formula", "T = 50 + 10 * (theta - guruh o‘rtachasi) / guruh standart tafovuti"),
+            ("Cheklov", "Guruhga nisbiy T-ball; 75 bilan kesilmaydi; sessiyalararo tenglashtirilmagan"),
+            ("Ochiq savollar", "To‘liq to‘g‘ri / noto‘g‘ri (0/1); esse va qisman ball hisoblanmaydi"),
+            ("Noaniqlik", "Posterior SD item kalibrlash noaniqligini o‘z ichiga olmaydi"),
+            ("Ogohlantirishlar", ", ".join(calibration.get("warnings", []))),
+            ("Kvadratura", json.dumps(calibration.get("quadrature", {}))),
+        ]:
+            audit.append([label, value])
+        # Keep the complete versioned snapshot inside the export, split below
+        # Excel's 32,767-character per-cell limit for large cohorts.
+        encoded = json.dumps(calibration, ensure_ascii=False, allow_nan=False)
+        for start in range(0, len(encoded), 30000):
+            audit.append([f"Kalibrlash JSON {start // 30000 + 1}", encoded[start:start + 30000]])
+
     # Auto-adjust column widths for all sheets
-    for ws in [ws1, ws2, ws3]:
+    for ws in wb.worksheets:
         for col in ws.columns:
             max_len = max(len(str(cell.value or '')) for cell in col)
             col_letter = get_column_letter(col[0].column)
-            ws.column_dimensions[col_letter].width = max(max_len + 4, 12)
+            ws.column_dimensions[col_letter].width = min(max(max_len + 4, 12), 80)
 
     wb.save(file_path)
     return file_path

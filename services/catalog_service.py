@@ -12,7 +12,7 @@ from services.test_document import TestDocument
 
 SUMMARY_SQL = """SELECT t.id, t.public_id, t.code, t.title, t.status,
     t.total_questions, t.open_questions_count, t.visibility, t.subject,
-    t.created_at, t.finished_at, t.template_id, t.duration_minutes,
+    t.created_at, t.finished_at, t.template_id, t.duration_minutes, t.scoring_method,
     COALESCE(NULLIF(p.full_name, ''), NULLIF(t.publisher_name, ''), 'Ism hali kiritilmagan') AS publisher_name,
     COALESCE(tt.price_uzs, 5000) AS standard_price_uzs,
     s.id AS submission_id, COALESCE(d.revision, CASE WHEN ta.user_id IS NOT NULL THEN 0 END) AS draft_revision,
@@ -121,8 +121,8 @@ async def create_session(db, owner_id, template, name, visibility, subject, dura
         code = "T-" + str(secrets.randbelow(900000) + 100000)
     document = TestDocument.model_validate_json(template["document_json"])
     cursor = await db.execute("""INSERT INTO tests(code, title, created_by, total_questions, open_questions_count,
-        document_json, source_import_id, template_id, public_id, visibility, subject, publisher_name, duration_minutes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        document_json, source_import_id, template_id, public_id, visibility, subject, publisher_name, duration_minutes, scoring_method)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'rasch_v1')""",
         (code, document.title, owner_id, len(document.questions), sum(q.kind == "open" for q in document.questions),
          template["document_json"], template["source_import_id"], template["id"], uuid.uuid4().hex, visibility, subject, name, duration_minutes))
     test_id = cursor.lastrowid

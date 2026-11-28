@@ -9,7 +9,15 @@ Telegram bot built with **aiogram 3**, **aiosqlite**, and **DeepSeek / Gemini** 
    - 9 tagacha **ochiq savol** (open questions) qo'llab-quvvatlanadi.
    - Ochiq savollar uchun o'qituvchi maxsus ko'rsatma (rubric) kiritadi va ular **DeepSeek AI** (yoki Gemini) yordamida o'zbek tilida xolis baholanadi.
 
-2. **Dinamik 3-bosqichli ballar tizimi (1.1, 1.7, 2.5 ball)**:
+2. **Yangi testlarda Rash modeli asosidagi mashq natijasi**:
+   - Savol qiyinligi va o‘quvchi bilim darajasi 1PL Rasch modeli (MML/EAP) bilan baholanadi.
+   - Test yakunlangach, guruhga nisbiy T-ball va teng natijalar uchun teng o‘rin ko‘rsatiladi.
+   - Ma’lumot yetarli bo‘lmasa, to‘g‘ri javoblar saqlanadi, taxminiy ball yaratilmaydi.
+   - Bu rasmiy sertifikat bali emas; kichik guruhlar va noaniqlik haqida ogohlantirish beriladi.
+   - Ochiq savollar hozircha butun savol uchun to‘g‘ri/noto‘g‘ri baholanadi; esse va qisman ball alohida model talab qiladi.
+   - Metodika, tekshiruvlar va cheklovlar: [Rasch scoring](docs/rasch-scoring.md).
+
+   **Avval yaratilgan testlar o‘z 3-bosqichli tizimida qoladi (1.1, 1.7, 2.5 ball):**
    - Barcha o'quvchilar javoblari qabul qilingach, o'qituvchi "Testni yakunlash" tugmasini bosadi.
    - Tizim yopiq savollarni muvaffaqiyat darajasiga ko'ra 3 ta guruhga (tertile) ajratadi:
      - 🟢 **1.1 ball**: Ko'pchilik o'quvchilar to'g'ri topgan oson savollar.
@@ -38,12 +46,21 @@ Telegram bot built with **aiogram 3**, **aiosqlite**, and **DeepSeek / Gemini** 
    - Testlarni Telegram xabari yoki `.xlsx` Excel shabloni orqali kiritish.
    - "Testni yakunlash" bosilganda:
      - Telegramda qisqa hisobot va savollar ballari.
-     - 3 ta varaqdan iborat chiroyli formatlangan **Excel (.xlsx)** fayl (Reyting, Savollar tahlili, Har bir o'quvchining to'liq javoblar matritsasi).
+     - **Excel (.xlsx)** fayl: reyting, savollar tahlili va javoblar matritsasi; Rash testlarida metodika va kalibrlash varag‘i ham qo‘shiladi.
      - Barcha o'quvchilarga ularning yakuniy balli va o'rni avtomatik yuboriladi.
 
 ---
 
 ## O'rnatish va Ishga Tushirish
+
+### Mavzulashtirilgan mashqlar
+
+**Testlar → Mavzulashtirilgan** bo‘limida o‘quvchi imtihondagi savol raqamini
+tanlab, turli Basirat testlarining shu raqamdagi savollarini vaqtsiz ishlaydi.
+Javoblar saqlanadi; har savolda tekshirish, qayta ishlash va Oldingi/Keyingi bor.
+Basirat administratori (`ADMIN_IDS`) tekshirib nashr qilgan testini kabinetdagi
+**Mavzulashtirilgan → Basirat mashqlarida ko‘rsatish** orqali bankka qo‘shadi.
+[To‘liq qo‘llanma](docs/practice-bank.md).
 
 ### 1. Muhitni sozlash
 ```bash

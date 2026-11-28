@@ -15,14 +15,15 @@ export type ImportRecord = {
   assets: { id: string; kind: string; page: number; original_name: string }[];
 };
 export type Visibility = 'public' | 'unlisted';
+export type Scoring = { method: 'legacy_tertile' | 'rasch_v1'; status?: 'pending' | 'provisional' | 'unavailable'; version?: string; participants?: number; warnings?: string[]; label?: string };
 export type Profile = { full_name: string };
 export type TestSummary = { id: number; public_id: string; code: string; title: string; status: string; total_questions: number;
-  duration_minutes: number | null; active_attempts?: number; open_questions_count: number; visibility: Visibility; subject: string; publisher_name: string; created_at: string;
+  duration_minutes: number | null; scoring_method?: Scoring['method']; active_attempts?: number; open_questions_count: number; visibility: Visibility; subject: string; publisher_name: string; created_at: string;
   share_url: string; template_id: number | null; standard_price_uzs: number; submission_id: number | null; draft_revision: number | null; score: number | null; rank: number | null };
 export type TeacherCounts = { total: number; active: number; review: number };
 export type CatalogPage = { counts?: TeacherCounts; items: TestSummary[]; next_cursor: number | null; subjects: string[] };
 export type Answers = Record<string, string | Record<string, string>>;
-export type Submission = { id: number; auto_submitted?: boolean; answers: { number: number; status: string; correct: boolean | null; explanation_audio_url?: string }[]; score?: number; rank?: number; total_correct?: number };
+export type Submission = { id: number; auto_submitted?: boolean; answers: { number: number; status: string; correct: boolean | null; explanation_audio_url?: string }[]; score?: number | null; rank?: number | null; total_correct?: number; scoring?: Scoring };
 export type StudentQuestion = Pick<Question, 'number' | 'kind' | 'text' | 'options' | 'passage_id' | 'parts'> & { media: string[] };
 export type AttemptTimer = { started_at: number; deadline_at: number; server_now: number };
 export type StudentTest = {
@@ -32,9 +33,10 @@ export type StudentTest = {
 };
 export type Results = {
   test: TestSummary;
-  submissions: { id: number; first_name: string; last_name: string; user_id: number; total_correct: number; total_score: number; rank: number | null }[];
+  scoring?: Scoring;
+  submissions: { id: number; first_name: string; last_name: string; user_id: number; total_correct: number; total_score: number | null; rank: number | null; rasch_theta?: number | null; rasch_se?: number | null }[];
   answers: { id: number; submission_id: number; question_num: number; user_answer: string; is_correct: number; grading_status: string; ai_feedback: string | null }[];
-  questions: { question_num: number; correct_count: number; assigned_points: number | null; assigned_tier: string | null }[];
+  questions: { question_num: number; correct_count: number; assigned_points: number | null; assigned_tier: string | null; difficulty_logit?: number | null; infit?: number | null }[];
 };
 
 export type InvoiceStatus = 'paid' | 'cancelled' | 'failed' | 'pending';
